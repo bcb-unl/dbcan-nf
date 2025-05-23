@@ -199,5 +199,26 @@
         {
             "$ref": "#/$defs/generic_options"
         }
-    ]
+    ],
+    "properties": {
+        "dbcan_db": {
+            "type": "string"
+        },
+        "kraken_db_archive": {
+            "type": "string"
+        },
+        "skip_fastqc": {
+            "type": "boolean"
+        },
+        "skip_trimming": {
+            "type": "boolean"
+        },
+        "tax_id": {
+            "type": "string",
+            "default": "9606"
+        },
+        "skip_kraken_extraction": {
+            "type": "boolean"
+        }
+    }
 }

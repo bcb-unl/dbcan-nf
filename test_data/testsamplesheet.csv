@@ -1,0 +1,2 @@
+sample,group,short_reads_1,short_reads_2
+test_minigut,0,/array1/xinpeng/dbcan_new_dev/nf-core-dbcanmicrobiome/test_data/test_minigut_R1.fastq.gz,/array1/xinpeng/dbcan_new_dev/nf-core-dbcanmicrobiome/test_data/test_minigut_R2.fastq.gz
