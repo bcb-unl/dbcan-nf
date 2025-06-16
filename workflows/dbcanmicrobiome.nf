@@ -11,15 +11,16 @@ include { softwareVersionsToYAML } from '../subworkflows/nf-core/utils_nfcore_pi
 include { methodsDescriptionText } from '../subworkflows/local/utils_nfcore_dbcanmicrobiome_pipeline'
 
 // new modules in the pipeline
-include { KRAKEN2_DB_PREPARATION          } from '../modules/local/kraken2_db/'
+include { KRAKEN2_BUILDSTANDARD } from '../modules/nf-core/kraken2/buildstandard/main'
 include { KRAKEN2_KRAKEN2                 } from '../modules/nf-core/kraken2/kraken2/main'
 include { KRAKENTOOLS_EXTRACTKRAKENREADS  } from '../modules/nf-core/krakentools/extractkrakenreads/main'
 include { TRIMGALORE                      } from '../modules/nf-core/trimgalore/main'
 include { MEGAHIT                         } from '../modules/nf-core/megahit/main'
 include { PYRODIGAL                       } from '../modules/nf-core/pyrodigal/main'
-include { GUNZIP                          } from '../modules/nf-core/gunzip/main'
-include { RUNDBCAN_DATABASE               } from '../modules/local/rundbcandatabase/'
-include { RUNDBCAN_EASYSUBSTRATE          } from '../modules/local/rundbcaneasysubstrate/'
+include { GUNZIP as GUNZIP_FAA            } from '../modules/nf-core/gunzip/main'
+include { GUNZIP as GUNZIP_GFF            } from '../modules/nf-core/gunzip/main'
+include { RUNDBCAN_DATABASE               } from '../modules/nf-core/rundbcan/database/main'
+include { RUNDBCAN_EASYSUBSTRATE          } from '../modules/nf-core/rundbcan/easysubstrate/main'
 
 // new subworkflows
 include { FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS } from '../subworkflows/nf-core/fastq_extract_kraken_krakentools'
@@ -45,8 +46,6 @@ if(params.dbcan_db){
 } else {
     ch_dbcan_db = []
 }
-
-
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -80,7 +79,8 @@ workflow DBCANMICROBIOME {
     if (!ch_kraken2_db_file.isEmpty()) {
         if (ch_kraken2_db_file.extension in ['gz', 'tgz']) {
             // Expects to be tar.gz!
-            ch_db_for_kraken2 = KRAKEN2_DB_PREPARATION(ch_kraken2_db_file).db
+            KRAKEN2_BUILDSTANDARD ()
+            ch_db_for_kraken2 = KRAKEN2_BUILDSTANDARD.out.db
         } else if (ch_kraken2_db_file.isDirectory()) {
             // Directly used as database path
             ch_db_for_kraken2 = Channel.fromPath(ch_kraken2_db_file)
@@ -105,23 +105,59 @@ workflow DBCANMICROBIOME {
                 FASTQC_TRIMGALORE.out.reads,
                 ch_db_for_kraken2,
                 params.tax_id
-        ).extracted_kraken2_reads.set { extracted_kraken2_reads }
+        ).extracted_kraken2_reads.set { ch_megahit_input }
 
         ch_multiqc_files = ch_multiqc_files.mix(FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS.out.multiqc_files)
         ch_versions = ch_versions.mix ( FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS.out.versions )
     }
+    else
+    {
+        extracted_kraken2_reads = FASTQC_TRIMGALORE.out.reads
+            .map { meta, reads ->
+        def r1 = reads[0]
+        def r2 = reads.size() > 1 ? reads[1] : null
+        tuple(meta, r1, r2)
+    }
+    .set { ch_megahit_input }
+    }
 
     // MODULE: Megahit to assemble metagenomics
-    MEGAHIT ( extracted_kraken2_reads )
+    MEGAHIT ( ch_megahit_input )
     ch_versions = ch_versions.mix ( MEGAHIT.out.versions )
 
     //
     // MODULE: Pyrodigal to find genes in metagenomics data
-    //
+    // Will make it as subworkflow
     PYRODIGAL ( MEGAHIT.out.contigs, 'gff' )
     ch_versions = ch_versions.mix(PYRODIGAL.out.versions)
+    ch_faa = PYRODIGAL.out.faa
+    ch_gff = PYRODIGAL.out.annotations
+
+    GUNZIP_FAA (ch_faa)
+    GUNZIP_GFF (ch_gff)
+    ch_gunzip_faa = GUNZIP_FAA.out.gunzip
+    ch_gunzip_gff = GUNZIP_GFF.out.gunzip
 
 
+    //
+    // MODULE: run_dbCAN to find CAZymes and CGCs in metagenomics data
+    //Will write it into subworkflow later
+    RUNDBCAN_DATABASE ()
+    if (!ch_dbcan_db.isEmpty()) {
+        ch_dbcan_db = Channel.fromPath(ch_dbcan_db, checkIfExists: true)
+    } else {
+        ch_dbcan_db = RUNDBCAN_DATABASE.out.dbcan_db
+    }
+
+    ch_gunzip_gff_with_type = ch_gunzip_gff.map { meta, gff -> tuple(meta, gff, 'prodigal') }
+
+    RUNDBCAN_EASYSUBSTRATE (
+        ch_gunzip_faa,
+        ch_gunzip_gff_with_type,
+        ch_dbcan_db
+    )
+
+    ch_versions = ch_versions.mix(RUNDBCAN_DATABASE.out.versions)
 
     //
     // Collate and save software versions
