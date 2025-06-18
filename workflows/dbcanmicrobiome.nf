@@ -11,7 +11,7 @@ include { softwareVersionsToYAML } from '../subworkflows/nf-core/utils_nfcore_pi
 include { methodsDescriptionText } from '../subworkflows/local/utils_nfcore_dbcanmicrobiome_pipeline'
 
 // new modules in the pipeline
-include { KRAKEN2_BUILDSTANDARD } from '../modules/nf-core/kraken2/buildstandard/main'
+include { KRAKEN2_BUILDSTANDARD           } from '../modules/nf-core/kraken2/buildstandard/main'
 include { KRAKEN2_KRAKEN2                 } from '../modules/nf-core/kraken2/kraken2/main'
 include { KRAKENTOOLS_EXTRACTKRAKENREADS  } from '../modules/nf-core/krakentools/extractkrakenreads/main'
 include { TRIMGALORE                      } from '../modules/nf-core/trimgalore/main'
@@ -22,6 +22,8 @@ include { GUNZIP as GUNZIP_GFF            } from '../modules/nf-core/gunzip/main
 include { RUNDBCAN_DATABASE               } from '../modules/nf-core/rundbcan/database/main'
 include { RUNDBCAN_EASYSUBSTRATE          } from '../modules/nf-core/rundbcan/easysubstrate/main'
 
+include { FLYE                            } from '../modules/nf-core/flye/main'
+
 // new subworkflows
 include { FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS } from '../subworkflows/nf-core/fastq_extract_kraken_krakentools'
 include { FASTQC_TRIMGALORE                } from '../subworkflows/local/fastqc_trimgalore'
@@ -29,23 +31,9 @@ include { FASTQC_TRIMGALORE                } from '../subworkflows/local/fastqc_
 
 //prepare the project parameters and databases
 
-if(params.kraken_db_archive){
-    ch_kraken2_db_file = file(params.kraken_db_archive, checkIfExists: true)
-} else {
-    ch_kraken2_db_file = []
-}
-
-if(params.kraken_tax){
-    ch_kraken2_tax = params.kraken_tax
-} else {
-    ch_kraken2_tax = []
-}
-
-if(params.dbcan_db){
-    ch_dbcan_db = path(params.dbcan_db, checkIfExists: true)
-} else {
-    ch_dbcan_db = []
-}
+ch_kraken2_db_file = params.kraken_db ? path(params.kraken_db, type: 'dir', checkIfExists: true) : []
+ch_kraken2_tax     = params.kraken_tax ?: []
+ch_dbcan_db        = params.dbcan_db ? path(params.dbcan_db, checkIfExists: true) : []
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -64,71 +52,94 @@ workflow DBCANMICROBIOME {
     //
     // MODULE: Run FastQC_TrimGalore
     //
+
+    // 1. split channels based on the type of reads
+    ch_samplesheet_pe = ch_samplesheet.filter { meta, reads -> !meta.single_end }
+    ch_samplesheet_se = ch_samplesheet.filter { meta, reads -> meta.single_end }
+
+    // 2. pair-end process
     FASTQC_TRIMGALORE (
-        ch_samplesheet,
+        ch_samplesheet_pe,
         params.skip_fastqc,
         params.skip_trimming
     )
-    ch_multiqc_files = ch_multiqc_files.mix(FASTQC_TRIMGALORE.out.fastqc_zip.collect{it[1]})
+
+    ch_multiqc_files = ch_multiqc_files.mix(
+        FASTQC_TRIMGALORE.out.fastqc_zip.map{ it[1][0] }
+    )
     ch_versions = ch_versions.mix(FASTQC_TRIMGALORE.out.versions)
+    extract_kraken2_reads_pe = FASTQC_TRIMGALORE.out.reads
+    //3. single end process
+    extract_kraken2_reads_se = ch_samplesheet_se
 
+    // 4. combine all reads for the kraken2
+    extract_kraken2_reads = extract_kraken2_reads_pe.mix(extract_kraken2_reads_se)
 
     //
-    // MODULE: Kraken2 Build Database (Note: better to use nf-core kraken2 db build subworkflow)
+    // MODULE: Kraken2 Build Database
     //
-    if (!ch_kraken2_db_file.isEmpty()) {
-        if (ch_kraken2_db_file.extension in ['gz', 'tgz']) {
-            // Expects to be tar.gz!
-            KRAKEN2_BUILDSTANDARD ()
+    if (!params.skip_kraken_extraction) {
+        if (ch_kraken2_db_file.isEmpty()) {
+            KRAKEN2_BUILDSTANDARD (false)
             ch_db_for_kraken2 = KRAKEN2_BUILDSTANDARD.out.db
-        } else if (ch_kraken2_db_file.isDirectory()) {
-            // Directly used as database path
-            ch_db_for_kraken2 = Channel.fromPath(ch_kraken2_db_file)
         } else {
-            ch_db_for_kraken2 = Channel.empty()
+            ch_db_for_kraken2 = ch_kraken2_db_file
         }
     } else {
-        ch_db_for_kraken2 = Channel.empty()
+        ch_db_for_kraken2 = ch_kraken2_db_file
     }
-
-
-    extract_kraken2_reads = FASTQC_TRIMGALORE.out.reads
 
     //subworkflow to extract kraken2 reads
 
     if (!params.skip_kraken_extraction) {
-
         // TODO: build db process
         // Use nf-core subworkflow at https://nf-co.re/subworkflows/fasta_build_add_kraken2/
 
         FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS (
-                FASTQC_TRIMGALORE.out.reads,
+                extract_kraken2_reads,
                 ch_db_for_kraken2,
                 params.tax_id
-        ).extracted_kraken2_reads.set { ch_megahit_input }
+        ).extract_kraken2_reads.set { extract_kraken2_reads }
 
         ch_multiqc_files = ch_multiqc_files.mix(FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS.out.multiqc_files)
         ch_versions = ch_versions.mix ( FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS.out.versions )
     }
-    else
-    {
-        extracted_kraken2_reads = FASTQC_TRIMGALORE.out.reads
-            .map { meta, reads ->
-        def r1 = reads[0]
-        def r2 = reads.size() > 1 ? reads[1] : null
-        tuple(meta, r1, r2)
-    }
-    .set { ch_megahit_input }
-    }
+
 
     // MODULE: Megahit to assemble metagenomics
+
+
+    // make sure all reads are the list
+    extract_kraken2_reads_fixed = extract_kraken2_reads.map { meta, reads ->
+        tuple(meta, reads instanceof List ? reads : [reads])
+    }
+
+    // pair-end for MEGAHIT
+    ch_megahit_input = extract_kraken2_reads_fixed
+        .filter { meta, reads -> !meta.single_end && reads.size() == 2 && reads[0] && reads[1] }
+        .map { meta, reads -> tuple(meta, reads[0], reads[1]) }
+
+    // single-end for FLYE
+    ch_flye_input = extract_kraken2_reads_fixed
+        .filter { meta, reads -> meta.single_end && reads.size() == 1 && reads[0] }
+        .map { meta, reads -> tuple(meta, reads[0]) }
+    ch_flye_mode  = Channel.value(params.flye_mode ?: "--pacbio-hifi")
+
     MEGAHIT ( ch_megahit_input )
+    ch_flye_input.view { "FLYE input: $it" }
+    FLYE ( ch_flye_input, ch_flye_mode )
+    FLYE.out.fasta.view { "FLYE contigs: $it" }
     ch_versions = ch_versions.mix ( MEGAHIT.out.versions )
+    ch_megahit_contigs = MEGAHIT.out.contigs
+    ch_flye_contigs = FLYE.out.fasta
+
+    // combine all contigs
+    ch_all_contigs = ch_megahit_contigs.mix(ch_flye_contigs)
 
     //
     // MODULE: Pyrodigal to find genes in metagenomics data
     // Will make it as subworkflow
-    PYRODIGAL ( MEGAHIT.out.contigs, 'gff' )
+    PYRODIGAL ( ch_all_contigs, 'gff' )
     ch_versions = ch_versions.mix(PYRODIGAL.out.versions)
     ch_faa = PYRODIGAL.out.faa
     ch_gff = PYRODIGAL.out.annotations

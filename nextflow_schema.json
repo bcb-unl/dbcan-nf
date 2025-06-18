@@ -228,7 +228,12 @@
             "default": 9606
         },
         "skip_kraken_extraction": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
+        },
+        "flye_mode": {
+            "type": "string",
+            "default": "--pacbio-hifi"
         }
     }
 }

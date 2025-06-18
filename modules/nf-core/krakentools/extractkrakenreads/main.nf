@@ -39,7 +39,11 @@ process KRAKENTOOLS_EXTRACTKRAKENREADS {
         -k $classified_reads_assignment \\
         $report_option \\
         $input_reads_command \\
-        $output_reads_command
+        $output_reads_command \\
+        --include-parents \\
+        --exclude \\
+        --fastq-output 
+
 
     $gzip_reads_command
 

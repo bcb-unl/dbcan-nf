@@ -1,13 +1,13 @@
 process EXTRACT_CGC_RANGES {
     input:
-    path cgc_tsv
-    path substrate_tsv
+    path cgc_standard_out
+    path substrate_prediction
 
     output:
     path "cgc_ranges.tsv"
 
     script:
     """
-    python3 scripts/extract_cgc_ranges.py ${cgc_tsv} ${substrate_tsv} cgc_ranges.tsv
+    python3 ../../bin/extract_cgc_ranges.py ${cgc_standard_out} ${substrate_prediction} cgc_ranges.tsv
     """
 }

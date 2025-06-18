@@ -26,6 +26,13 @@
                             "modules"
                         ]
                     },
+                    "flye": {
+                        "branch": "master",
+                        "git_sha": "05954dab2ff481bcb999f24455da29a5828af08d",
+                        "installed_by": [
+                            "modules"
+                        ]
+                    },
                     "gunzip": {
                         "branch": "master",
                         "git_sha": "05954dab2ff481bcb999f24455da29a5828af08d",
@@ -54,7 +61,8 @@
                         "installed_by": [
                             "fastq_extract_kraken_krakentools",
                             "modules"
-                        ]
+                        ],
+                        "patch": "modules/nf-core/krakentools/extractkrakenreads/krakentools-extractkrakenreads.diff"
                     },
                     "megahit": {
                         "branch": "master",
