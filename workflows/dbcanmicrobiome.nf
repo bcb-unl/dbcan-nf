@@ -126,9 +126,7 @@ workflow DBCANMICROBIOME {
     ch_flye_mode  = Channel.value(params.flye_mode ?: "--pacbio-hifi")
 
     MEGAHIT ( ch_megahit_input )
-    ch_flye_input.view { "FLYE input: $it" }
     FLYE ( ch_flye_input, ch_flye_mode )
-    FLYE.out.fasta.view { "FLYE contigs: $it" }
     ch_versions = ch_versions.mix ( MEGAHIT.out.versions )
     ch_megahit_contigs = MEGAHIT.out.contigs
     ch_flye_contigs = FLYE.out.fasta
