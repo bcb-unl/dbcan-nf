@@ -23,11 +23,13 @@ include { RUNDBCAN_DATABASE               } from '../modules/nf-core/rundbcan/da
 include { RUNDBCAN_EASYSUBSTRATE          } from '../modules/nf-core/rundbcan/easysubstrate/main'
 
 include { FLYE                            } from '../modules/nf-core/flye/main'
+include { RUNDBCAN_UTILS_CAL_COVERAGE     } from '../modules/local/dbcan_utils_cal_coverage'
+include { SAMTOOLS_INDEX                  } from '../modules/nf-core/samtools/index/main'
 
 // new subworkflows
 include { FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS } from '../subworkflows/nf-core/fastq_extract_kraken_krakentools'
 include { FASTQC_TRIMGALORE                } from '../subworkflows/local/fastqc_trimgalore'
-
+include { BWAMEME_INDEX_MEM                } from '../subworkflows/local/bwameme_index_mem'
 
 //prepare the project parameters and databases
 
@@ -167,6 +169,26 @@ workflow DBCANMICROBIOME {
     )
 
     ch_versions = ch_versions.mix(RUNDBCAN_DATABASE.out.versions)
+
+    //
+    // Read mapping with BWA-MEME
+    BWAMEME_INDEX_MEM (
+        ch_all_contigs,
+        extract_kraken2_reads_fixed,
+    )
+    //
+    ch_bam_bai = BWAMEME_INDEX_MEM.out.ch_bam_bai
+    ch_versions = ch_versions.mix(BWAMEME_INDEX_MEM.out.versions)
+
+
+
+    RUNDBCAN_UTILS_CAL_COVERAGE (
+        ch_gunzip_gff,
+        ch_bam_bai
+    )
+    ch_versions = ch_versions.mix(RUNDBCAN_UTILS_CAL_COVERAGE.out.versions)
+
+
 
     //
     // Collate and save software versions
