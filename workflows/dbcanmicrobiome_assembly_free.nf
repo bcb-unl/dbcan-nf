@@ -60,6 +60,7 @@ workflow DBCANMICROBIOME {
 
     // 1. split channels based on the type of reads
     ch_samplesheet_pe = ch_samplesheet.filter { meta, reads -> !meta.single_end }
+    ch_samplesheet_se = ch_samplesheet.filter { meta, reads -> meta.single_end }
 
     // 2. pair-end process
     FASTQC_TRIMGALORE (
@@ -74,9 +75,10 @@ workflow DBCANMICROBIOME {
     ch_versions = ch_versions.mix(FASTQC_TRIMGALORE.out.versions)
     extract_kraken2_reads_pe = FASTQC_TRIMGALORE.out.reads
     //3. single end process
+    extract_kraken2_reads_se = ch_samplesheet_se
 
     // 4. combine all reads for the kraken2
-    extract_kraken2_reads = extract_kraken2_reads_pe
+    extract_kraken2_reads = extract_kraken2_reads_pe.mix(extract_kraken2_reads_se)
 
     //
     // MODULE: Kraken2 Build Database
@@ -122,16 +124,25 @@ workflow DBCANMICROBIOME {
         .filter { meta, reads -> !meta.single_end && reads.size() == 2 && reads[0] && reads[1] }
         .map { meta, reads -> tuple(meta, reads[0], reads[1]) }
 
+    // single-end for FLYE
+    ch_flye_input = extract_kraken2_reads_fixed
+        .filter { meta, reads -> meta.single_end && reads.size() == 1 && reads[0] }
+        .map { meta, reads -> tuple(meta, reads[0]) }
+    ch_flye_mode  = Channel.value(params.flye_mode ?: "--pacbio-hifi")
 
     MEGAHIT ( ch_megahit_input )
-
+    FLYE ( ch_flye_input, ch_flye_mode )
     ch_versions = ch_versions.mix ( MEGAHIT.out.versions )
     ch_megahit_contigs = MEGAHIT.out.contigs
+    ch_flye_contigs = FLYE.out.fasta
+
+    // combine all contigs
+    ch_all_contigs = ch_megahit_contigs.mix(ch_flye_contigs)
 
     //
     // MODULE: Pyrodigal to find genes in metagenomics data
     // Will make it as subworkflow
-    PYRODIGAL ( ch_megahit_contigs, 'gff' )
+    PYRODIGAL ( ch_all_contigs, 'gff' )
     ch_versions = ch_versions.mix(PYRODIGAL.out.versions)
     ch_faa = PYRODIGAL.out.faa
     ch_gff = PYRODIGAL.out.annotations
@@ -165,7 +176,7 @@ workflow DBCANMICROBIOME {
     //
     // Read mapping with BWA-MEME
     BWAMEME_INDEX_MEM (
-        ch_megahit_contigs,
+        ch_all_contigs,
         extract_kraken2_reads_fixed,
     )
     //
@@ -191,18 +202,15 @@ workflow DBCANMICROBIOME {
         RUNDBCAN_EASYSUBSTRATE.out.dbcan_results,
 
     )
-    RUNDBCAN_UTILS_CAL_ABUND.out.abund_dir.view()
-    ch_plot_input = RUNDBCAN_UTILS_CAL_ABUND.out.abund_dir
-    .toList()
-    .map { tuples ->
-        tuple(
-            tuples*.getAt(0).id,
-            tuples*.getAt(1)
-        )
-    }
-    //ch_plot_input.view()
 
-    //
+    ch_plot_input = RUNDBCAN_UTILS_CAL_ABUND.out.abund_dir
+    .collect()
+    .map { tuples ->
+        def meta_list = tuples.collect { it[0] }
+        def abund_dirs = tuples.collect { it[1] }
+        tuple(meta_list, abund_dirs)
+    }
+
     RUNDBCAN_PLOT_BAR(ch_plot_input)
     //
     // Collate and save software versions

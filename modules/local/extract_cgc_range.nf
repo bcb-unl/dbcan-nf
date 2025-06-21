@@ -1,13 +1,25 @@
 process EXTRACT_CGC_RANGES {
+    tag "$meta.id"
+    label 'process_medium'
+
+    conda "bioconda::dbcan=5.1.2"
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'https://depot.galaxyproject.org/singularity/dbcan:5.1.2--pyhdfd78af_0' :
+        'biocontainers/dbcan:5.1.2--pyhdfd78af_0' }"
+
     input:
-    path cgc_standard_out
-    path substrate_prediction
+    tuple val(meta), path(cgc_standard_out)
+    tuple val(meta2), path(substrate_prediction)
+
 
     output:
-    path "cgc_ranges.tsv"
+    tuple val(meta), path("cgc_ranges.tsv"), emit: cgc_ranges
+
+    when:
 
     script:
     """
-    python3 ../../bin/extract_cgc_ranges.py ${cgc_standard_out} ${substrate_prediction} cgc_ranges.tsv
+    extract_cgc_ranges.py ${cgc_standard_out} ${substrate_prediction} cgc_ranges.tsv
     """
+
 }
