@@ -6,10 +6,8 @@ process RUNDBCAN_UTILS_CAL_ABUND {
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
         'https://depot.galaxyproject.org/singularity/dbcan:5.1.2--pyhdfd78af_0' :
         'biocontainers/dbcan:5.1.2--pyhdfd78af_0' }"
-
     input:
-    tuple val(meta), path(cgc_depth)
-    tuple val(meta2), path(dbcan_results)
+    tuple val(meta), path(cgc_depth), path(dbcan_results)
 
     output:
     tuple val(meta), path("*_abund")                  , emit: abund_dir

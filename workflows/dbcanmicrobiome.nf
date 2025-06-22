@@ -36,10 +36,10 @@ include { CGC_DEPTH                        } from '../subworkflows/local/cgc_dep
 
 //prepare the project parameters and databases
 
-ch_kraken2_db_file = params.kraken_db ? path(params.kraken_db, type: 'dir', checkIfExists: true) : []
-ch_kraken2_tax     = params.kraken_tax ?: []
-ch_dbcan_db        = params.dbcan_db ? path(params.dbcan_db, checkIfExists: true) : []
-
+ch_kraken2_db_file = params.kraken_db ?
+    Channel.fromPath(params.kraken_db, checkIfExists: true) :
+    Channel.empty()
+ch_dbcan_db = params.dbcan_db ? Channel.fromPath(params.dbcan_db, checkIfExists: true) : Channel.empty()
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     RUN MAIN WORKFLOW
@@ -59,11 +59,33 @@ workflow DBCANMICROBIOME {
     //
 
     // 1. split channels based on the type of reads
-    ch_samplesheet_pe = ch_samplesheet.filter { meta, reads -> !meta.single_end }
+    // DNA channel
+    ch_samplesheet
+    .map { meta, fastqs, transcriptomes ->
+        def fq_list = fastqs ?: []
+        def dna_meta = [ id: meta.id, single_end: meta.single_end ]
+        tuple(dna_meta, fq_list)
+    }
+    .filter { meta, fq_list -> fq_list && fq_list.size() > 0 }
+    .set { ch_samplesheet_dna }
+
+    // RNA channel
+    ch_samplesheet
+    .map { meta, fastqs, transcriptomes ->
+        def t_list = transcriptomes ?: []
+        def rna_meta = [ id: meta.id ]
+        tuple(rna_meta, t_list)
+    }
+    .filter { meta, t_list -> t_list && t_list.size() > 0 }
+    .set { ch_samplesheet_rna }
+
+
+    //ch_samplesheet_dna.view()
+    //ch_samplesheet_rna.view()
 
     // 2. pair-end process
     FASTQC_TRIMGALORE (
-        ch_samplesheet_pe,
+        ch_samplesheet_dna,
         params.skip_fastqc,
         params.skip_trimming
     )
@@ -71,11 +93,11 @@ workflow DBCANMICROBIOME {
     ch_multiqc_files = ch_multiqc_files.mix(
         FASTQC_TRIMGALORE.out.fastqc_zip.map{ it[1][0] }
     )
+
     ch_versions = ch_versions.mix(FASTQC_TRIMGALORE.out.versions)
     extract_kraken2_reads_pe = FASTQC_TRIMGALORE.out.reads
-    //3. single end process
 
-    // 4. combine all reads for the kraken2
+    // 3. combine all reads for the kraken2
     extract_kraken2_reads = extract_kraken2_reads_pe
 
     //
@@ -111,11 +133,8 @@ workflow DBCANMICROBIOME {
 
     // MODULE: Megahit to assemble metagenomics
 
-
     // make sure all reads are the list
-    extract_kraken2_reads_fixed = extract_kraken2_reads.map { meta, reads ->
-        tuple(meta, reads instanceof List ? reads : [reads])
-    }
+    extract_kraken2_reads_fixed = extract_kraken2_reads
 
     // pair-end for MEGAHIT
     ch_megahit_input = extract_kraken2_reads_fixed
@@ -161,6 +180,7 @@ workflow DBCANMICROBIOME {
     )
 
     ch_versions = ch_versions.mix(RUNDBCAN_DATABASE.out.versions)
+    ch_dbcan_results = RUNDBCAN_EASYSUBSTRATE.out.dbcan_results
 
     //
     // Read mapping with BWA-MEME
@@ -179,6 +199,7 @@ workflow DBCANMICROBIOME {
         ch_bam_bai
     )
     ch_versions = ch_versions.mix(RUNDBCAN_UTILS_CAL_COVERAGE.out.versions)
+    ch_coverage = RUNDBCAN_UTILS_CAL_COVERAGE.out.depth_txt
 
 
     CGC_DEPTH(
@@ -186,11 +207,17 @@ workflow DBCANMICROBIOME {
         ch_bam_bai
     )
 
-    RUNDBCAN_UTILS_CAL_ABUND(
-        RUNDBCAN_UTILS_CAL_COVERAGE.out.depth_txt,
-        RUNDBCAN_EASYSUBSTRATE.out.dbcan_results,
+    ch_versions = ch_versions.mix(CGC_DEPTH.out.versions)
+    ch_cgc_depth = CGC_DEPTH.out.tsv
 
+    ch_abund_input = ch_coverage
+        .join(ch_dbcan_results, by: 0)
+        .map { meta, cgc_depth, dbcan_results -> tuple(meta, cgc_depth, dbcan_results) }
+
+    RUNDBCAN_UTILS_CAL_ABUND(
+    ch_abund_input
     )
+
     RUNDBCAN_UTILS_CAL_ABUND.out.abund_dir.view()
     ch_plot_input = RUNDBCAN_UTILS_CAL_ABUND.out.abund_dir
     .toList()
