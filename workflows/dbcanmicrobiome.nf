@@ -36,27 +36,39 @@ include { CGC_DEPTH                        } from '../subworkflows/local/cgc_dep
 
 //prepare the project parameters and databases
 
-ch_kraken2_db_file = params.kraken_db ?
-    Channel.fromPath(params.kraken_db, checkIfExists: true) :
-    Channel.empty()
-ch_dbcan_db = params.dbcan_db ? Channel.fromPath(params.dbcan_db, checkIfExists: true) : Channel.empty()
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     RUN MAIN WORKFLOW
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
+
 workflow DBCANMICROBIOME {
-
     take:
-    ch_samplesheet // channel: samplesheet read in from --input
-    main:
+    ch_samplesheet
 
+    main:
     ch_versions = Channel.empty()
     ch_multiqc_files = Channel.empty()
-    //
-    // MODULE: Run FastQC_TrimGalore
-    //
+
+    // process database parameters
+    if (params.dbcan_db) {
+        ch_dbcan_db_final = Channel.fromPath(params.dbcan_db, checkIfExists: true)
+    } else {
+        RUNDBCAN_DATABASE()
+        ch_dbcan_db_final = RUNDBCAN_DATABASE.out.dbcan_db
+        ch_versions = ch_versions.mix(RUNDBCAN_DATABASE.out.versions)
+    }
+
+    // Kraken2 数据库处理
+    if (!params.skip_kraken_extraction) {
+        if (params.kraken_db) {
+            ch_db_for_kraken2 = Channel.fromPath(params.kraken_db, type: 'dir', checkIfExists: true)
+        } else {
+            KRAKEN2_BUILDSTANDARD(false)
+            ch_db_for_kraken2 = KRAKEN2_BUILDSTANDARD.out.db
+        }
+    }
 
     // 1. split channels based on the type of reads
     // DNA channel
@@ -103,16 +115,7 @@ workflow DBCANMICROBIOME {
     //
     // MODULE: Kraken2 Build Database
     //
-    if (!params.skip_kraken_extraction) {
-        if (ch_kraken2_db_file.isEmpty()) {
-            KRAKEN2_BUILDSTANDARD (false)
-            ch_db_for_kraken2 = KRAKEN2_BUILDSTANDARD.out.db
-        } else {
-            ch_db_for_kraken2 = ch_kraken2_db_file
-        }
-    } else {
-        ch_db_for_kraken2 = ch_kraken2_db_file
-    }
+
 
     //subworkflow to extract kraken2 reads
 
@@ -123,8 +126,8 @@ workflow DBCANMICROBIOME {
         FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS (
                 extract_kraken2_reads,
                 ch_db_for_kraken2,
-                params.tax_id
-        ).extract_kraken2_reads.set { extract_kraken2_reads }
+                params.kraken_tax
+        ).extracted_kraken2_reads.set { extract_kraken2_reads }
 
         ch_multiqc_files = ch_multiqc_files.mix(FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS.out.multiqc_files)
         ch_versions = ch_versions.mix ( FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS.out.versions )
@@ -164,19 +167,13 @@ workflow DBCANMICROBIOME {
     //
     // MODULE: run_dbCAN to find CAZymes and CGCs in metagenomics data
     //Will write it into subworkflow later
-    RUNDBCAN_DATABASE ()
-    if (!ch_dbcan_db.isEmpty()) {
-        ch_dbcan_db = Channel.fromPath(ch_dbcan_db, checkIfExists: true)
-    } else {
-        ch_dbcan_db = RUNDBCAN_DATABASE.out.dbcan_db
-    }
 
     ch_gunzip_gff_with_type = ch_gunzip_gff.map { meta, gff -> tuple(meta, gff, 'prodigal') }
 
     RUNDBCAN_EASYSUBSTRATE (
         ch_gunzip_faa,
         ch_gunzip_gff_with_type,
-        ch_dbcan_db
+        ch_dbcan_db_final
     )
 
     ch_versions = ch_versions.mix(RUNDBCAN_DATABASE.out.versions)
