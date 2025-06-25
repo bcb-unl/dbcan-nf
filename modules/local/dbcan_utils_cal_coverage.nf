@@ -9,7 +9,7 @@ process RUNDBCAN_UTILS_CAL_COVERAGE {
 
     input:
     tuple val(meta), path(gff)
-    tuple val(meta2), path(bam), path(bai)
+    tuple val(meta), path(bam), path(bai)
 
     output:
     tuple val(meta), path("${prefix}.depth.txt")               , emit: depth_txt
