@@ -70,15 +70,16 @@ workflow DBCANMICROBIOME {
         ch_samplesheet_rna = ch_samplesheet
             .map { meta, fastqs, transcriptomes ->
                 def t_list = transcriptomes ?: []
-                def rna_meta = [ id: meta.id + '_rna' ]
+                def rna_meta = [ id: meta.id + '_rna', single_end: meta.single_end ]
                 tuple(rna_meta, t_list)
             }
             .filter { meta, t_list -> t_list && t_list.size() > 0 }
             .ifEmpty { Channel.empty() }
 
+
         //tmp view channels
         //ch_samplesheet_dna.view()
-        //ch_samplesheet_rna.view()
+        ch_samplesheet_rna.view()
 
 
 
@@ -248,7 +249,7 @@ workflow DBCANMICROBIOME {
         RUNDBCAN_PLOT_BAR_DNA(ch_plot_input_dna)
         //ch_samplesheet_rna.view()
 // only if ch_samplesheet_rna has content
-if (ch_samplesheet_rna) {
+if (!ch_samplesheet_rna.ifEmpty([])) {
     // rna processing
     FASTQC_TRIMGALORE_RNA (
         ch_samplesheet_rna,
@@ -259,22 +260,25 @@ if (ch_samplesheet_rna) {
         FASTQC_TRIMGALORE_RNA.out.fastqc_zip.map{ it[1][0] }
     )
     ch_versions = ch_versions.mix(FASTQC_TRIMGALORE_RNA.out.versions)
-    extract_kraken2_reads_rna = FASTQC_TRIMGALORE_RNA.out.reads
+    ch_trimmed_reads_rna = FASTQC_TRIMGALORE_RNA.out.reads
+
     // 3. combine all reads for the kraken2
     //subworkflow to extract kraken2 reads
-    if (!params.skip_kraken_extraction) {
-        // TODO: build db process
-        // Use nf-core subworkflow at https://nf-co.re/subworkflows/fasta_build_add_kraken2/
-        FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_RNA (
-            extract_kraken2_reads_rna,
-            ch_db_for_kraken2,
-            params.kraken_tax
-        )
-        extract_kraken2_reads_rna = FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_RNA.out.extracted_kraken2_reads
+        if (!params.skip_kraken_extraction) {
+            FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_DNA (
+                    ch_trimmed_reads_rna,
+                    ch_db_for_kraken2,
+                    params.kraken_tax)
+            ch_extracted_from_kraken2_reads_rna = FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_RNA.out.extracted_kraken2_reads
 
-        ch_multiqc_files = ch_multiqc_files.mix(FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_RNA.out.multiqc_files)
-        ch_versions = ch_versions.mix(FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_RNA.out.versions)
-    }
+            ch_multiqc_files = ch_multiqc_files.mix(FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_RNA.out.multiqc_files)
+            ch_versions = ch_versions.mix ( FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_RNA.out.versions )
+            extract_kraken2_reads_rna = ch_extracted_from_kraken2_reads_rna
+            //ch_megahit_input_dna.view()
+        // if skip kraken2 extraction, use trimmed reads
+        } else {
+            extract_kraken2_reads_rna = ch_trimmed_reads_rna
+        }
 
     BWAMEME_INDEX_MEM_RNA (
         ch_megahit_contigs,
@@ -283,25 +287,26 @@ if (ch_samplesheet_rna) {
     ch_bam_bai_rna = BWAMEME_INDEX_MEM_RNA.out.ch_bam_bai
     ch_versions = ch_versions.mix(BWAMEME_INDEX_MEM_RNA.out.versions)
 
-
-        ch_gff_bam_bai_rna = ch_gunzip_gff
+    ch_gff_bam_bai_rna = ch_gunzip_gff
             .join(ch_bam_bai_rna, by: 0)
-            .map { tuple ->
-            def (meta, gff, bam_tuple) = tuple
-            def (meta2, bam, bai) = bam_tuple
-            tuple(meta, gff, bam, bai)
-        }
+            .map { meta, gff, bam, bai ->
+                tuple(meta, gff, bam, bai)
+            }
 
     RUNDBCAN_UTILS_CAL_COVERAGE_RNA(
-        ch_gff_bam_bai_rna.map { meta, gff, bam, bai -> tuple(meta, gff) },
-        ch_gff_bam_bai_rna.map { meta, gff, bam, bai -> tuple(meta, bam, bai) }
-    )
+            ch_gff_bam_bai_rna.map { meta, gff, bam, bai -> tuple(meta, gff) },
+            ch_gff_bam_bai_rna.map { meta, gff, bam, bai -> tuple(meta, bam, bai) }
+        )
+
 
     ch_versions = ch_versions.mix(RUNDBCAN_UTILS_CAL_COVERAGE_RNA.out.versions)
     ch_coverage_rna = RUNDBCAN_UTILS_CAL_COVERAGE_RNA.out.depth_txt
 
+    ch_dbcan_results_rna = RUNDBCAN_EASYSUBSTRATE.out.dbcan_results
+        .map { meta, dbcan_results -> tuple(meta, dbcan_results) }
+
     CGC_DEPTH_RNA (
-        RUNDBCAN_EASYSUBSTRATE.out.dbcan_results,
+        ch_dbcan_results_rna,
         ch_bam_bai_rna
     )
     ch_versions = ch_versions.mix(CGC_DEPTH_RNA.out.versions)
@@ -314,6 +319,7 @@ if (ch_samplesheet_rna) {
     RUNDBCAN_UTILS_CAL_ABUND_RNA(
         ch_abund_input_rna
     )
+
     ch_plot_input_rna = RUNDBCAN_UTILS_CAL_ABUND_RNA.out.abund_dir
         .toList()
         .map { tuples ->
