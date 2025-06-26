@@ -18,7 +18,7 @@ process RUNDBCAN_PLOT_CGC {
     when:
     task.ext.when == null || task.ext.when
 
-    script:
+    script:x
     def args = task.ext.args ?: ''
     def prefix = task.ext.prefix ?: "${meta.id}_cgc_plot"
 
