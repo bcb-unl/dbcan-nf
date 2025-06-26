@@ -8,18 +8,23 @@ process EXTRACT_CGC_RANGES {
         'biocontainers/dbcan:5.1.2--pyhdfd78af_0' }"
 
     input:
-    tuple val(meta), path(cgc_standard_out)
-    tuple val(meta2), path(substrate_prediction)
+    tuple val(meta), path(dbcan_results)
 
 
     output:
-    tuple val(meta), path("cgc_ranges.tsv"), emit: cgc_ranges
+    tuple val(meta), path("*cgc_ranges.tsv"), emit: cgc_ranges
+
 
     when:
 
+
+
     script:
+    def args = task.ext.args ?: ''
+    def prefix = task.ext.prefix ?: "${meta.id}"
+
     """
-    extract_cgc_ranges.py ${cgc_standard_out} ${substrate_prediction} cgc_ranges.tsv
+    extract_cgc_ranges.py ${dbcan_results}/cgc_standard_out.tsv ${dbcan_results}/substrate_prediction.tsv ${prefix}_cgc_ranges.tsv
     """
 
 }

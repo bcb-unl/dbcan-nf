@@ -37,8 +37,8 @@ include { FASTQC_TRIMGALORE                as FASTQC_TRIMGALORE_DNA         } fr
 include { FASTQC_TRIMGALORE                as FASTQC_TRIMGALORE_RNA         } from '../subworkflows/local/fastqc_trimgalore'
 include { BWAMEME_INDEX_MEM                as BWAMEME_INDEX_MEM_DNA          } from '../subworkflows/local/bwameme_index_mem'
 include { BWAMEME_INDEX_MEM                as BWAMEME_INDEX_MEM_RNA          } from '../subworkflows/local/bwameme_index_mem'
-include { CGC_DEPTH                        as CGC_DEPTH_DNA            } from '../subworkflows/local/cgc_depth'
-include { CGC_DEPTH                        as CGC_DEPTH_RNA            } from '../subworkflows/local/cgc_depth'
+include { CGC_DEPTH_PLOT                   as CGC_DEPTH_PLOT_DNA            } from '../subworkflows/local/cgc_depth_plot'
+include { CGC_DEPTH_PLOT                   as CGC_DEPTH_PLOT_RNA            } from '../subworkflows/local/cgc_depth_plot'
 
 //prepare the project parameters and databases
 
@@ -79,7 +79,7 @@ workflow DBCANMICROBIOME {
 
         //tmp view channels
         //ch_samplesheet_dna.view()
-        ch_samplesheet_rna.view()
+        //ch_samplesheet_rna.view()
 
 
 
@@ -218,13 +218,13 @@ workflow DBCANMICROBIOME {
         ch_versions = ch_versions.mix(RUNDBCAN_UTILS_CAL_COVERAGE_DNA.out.versions)
         ch_coverage_dna = RUNDBCAN_UTILS_CAL_COVERAGE_DNA.out.depth_txt
 
-        CGC_DEPTH_DNA(
+        CGC_DEPTH_PLOT_DNA(
             RUNDBCAN_EASYSUBSTRATE.out.dbcan_results,
             ch_bam_bai_dna
         )
 
-        ch_versions = ch_versions.mix(CGC_DEPTH_DNA.out.versions)
-        ch_cgc_depth_dna = CGC_DEPTH_DNA.out.tsv
+        ch_versions = ch_versions.mix(CGC_DEPTH_PLOT_DNA.out.versions)
+        ch_cgc_depth_dna = CGC_DEPTH_PLOT_DNA.out.tsv
 
         ch_abund_input_dna = ch_coverage_dna
             .join(ch_dbcan_results, by: 0)
@@ -305,12 +305,12 @@ if (!ch_samplesheet_rna.ifEmpty([])) {
     ch_dbcan_results_rna = RUNDBCAN_EASYSUBSTRATE.out.dbcan_results
         .map { meta, dbcan_results -> tuple(meta, dbcan_results) }
 
-    CGC_DEPTH_RNA (
+    CGC_DEPTH_PLOT_RNA (
         ch_dbcan_results_rna,
         ch_bam_bai_rna
     )
-    ch_versions = ch_versions.mix(CGC_DEPTH_RNA.out.versions)
-    ch_cgc_depth_rna = CGC_DEPTH_RNA.out.tsv
+    ch_versions = ch_versions.mix(CGC_DEPTH_PLOT_RNA.out.versions)
+    ch_cgc_depth_rna = CGC_DEPTH_PLOT_RNA.out.tsv
 
     ch_abund_input_rna = ch_coverage_rna
         .join(ch_dbcan_results, by: 0)

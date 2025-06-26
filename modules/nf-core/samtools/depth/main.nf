@@ -1,5 +1,5 @@
 process SAMTOOLS_DEPTH {
-    tag "$meta1.id"
+    tag "$meta.id"
     label 'process_low'
 
     conda "${moduleDir}/environment.yml"
@@ -8,11 +8,10 @@ process SAMTOOLS_DEPTH {
         'biocontainers/samtools:1.21--h50ea8bc_0' }"
 
     input:
-    tuple val(meta1), path(bam), path(bai)
-    tuple val(meta2), val(intervals)
+    tuple val(meta), path(bam), path(bai), val(cgcid), val(intervals)
 
     output:
-    tuple val(meta1), path("*_samtools_depth/*.tsv"), emit: tsv
+    tuple val(meta), val(cgcid), path("*_samtools_depth/*.tsv"), emit: tsv
     path "versions.yml"           , emit: versions
 
     when:
@@ -20,9 +19,8 @@ process SAMTOOLS_DEPTH {
 
     script:
     def args = task.ext.args ?: ''
-    def sample_id = meta1.sample ?: meta1.id
+    def sample_id = meta.sample ?: meta.id
     def outdir = "${sample_id}_samtools_depth"
-    def cgcid = meta2.cgcid ?: meta2.id ?: meta2
     def prefix = cgcid.replaceAll(/\|/, '-')
     def positions = intervals ? "-r ${intervals}" : ""
     """
