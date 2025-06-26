@@ -9,9 +9,10 @@ process RUNDBCAN_PLOT_CGC {
 
     input:
     tuple val(meta), path(dbcan_results), val(cgc_id), path(readscount)
+    path(dbcan_db)
 
     output:
-    tuple val(meta), path("*_cgc_plot"), emit: plot_dir
+    tuple val(meta), path("*.pdf"), emit: cgc_abund_pdf
     path "versions.yml", emit: versions
 
     when:
@@ -22,14 +23,13 @@ process RUNDBCAN_PLOT_CGC {
     def prefix = task.ext.prefix ?: "${meta.id}_cgc_plot"
 
     """
-    mkdir -p ${prefix}_cgc_plot
-
     plots.py CGC_synteny_coverage_plot \\
         -i ${dbcan_results} \\
-        --cgc_id '${cgc_id}' \\
+        --cgcid '${cgc_id}' \\
         --readscount ${readscount} \\
+        --db_dir ${dbcan_db} \\
         ${args}
-    mv *syntenic-cov.pdf ${prefix}_cgc_plot/
+
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

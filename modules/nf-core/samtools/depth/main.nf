@@ -8,10 +8,10 @@ process SAMTOOLS_DEPTH {
         'biocontainers/samtools:1.21--h50ea8bc_0' }"
 
     input:
-    tuple val(meta), path(bam), path(bai), val(cgcid), val(intervals)
+    tuple val(meta), val(cgcid), val(intervals), path(bam), path(bai)
 
     output:
-    tuple val(meta), val(cgcid), path("*_samtools_depth/*.tsv"), emit: tsv
+    tuple val(meta), path("${meta.id}_samtools_depth/*.tsv"), emit: tsv
     path "versions.yml"           , emit: versions
 
     when:
@@ -19,7 +19,7 @@ process SAMTOOLS_DEPTH {
 
     script:
     def args = task.ext.args ?: ''
-    def sample_id = meta.sample ?: meta.id
+    def sample_id = meta.id
     def outdir = "${sample_id}_samtools_depth"
     def prefix = cgcid.replaceAll(/\|/, '-')
     def positions = intervals ? "-r ${intervals}" : ""

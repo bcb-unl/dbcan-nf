@@ -220,7 +220,8 @@ workflow DBCANMICROBIOME {
 
         CGC_DEPTH_PLOT_DNA(
             RUNDBCAN_EASYSUBSTRATE.out.dbcan_results,
-            ch_bam_bai_dna
+            ch_bam_bai_dna,
+            ch_dbcan_db_final
         )
 
         ch_versions = ch_versions.mix(CGC_DEPTH_PLOT_DNA.out.versions)
@@ -307,7 +308,8 @@ if (!ch_samplesheet_rna.ifEmpty([])) {
 
     CGC_DEPTH_PLOT_RNA (
         ch_dbcan_results_rna,
-        ch_bam_bai_rna
+        ch_bam_bai_rna,
+        ch_dbcan_db_final
     )
     ch_versions = ch_versions.mix(CGC_DEPTH_PLOT_RNA.out.versions)
     ch_cgc_depth_rna = CGC_DEPTH_PLOT_RNA.out.tsv
