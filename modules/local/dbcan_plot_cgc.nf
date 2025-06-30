@@ -12,7 +12,7 @@ process RUNDBCAN_PLOT_CGC {
     path(dbcan_db)
 
     output:
-    tuple val(meta), path("*.pdf"), emit: cgc_abund_pdf
+    tuple val(meta), path("*_cgc_synteny_plot"), emit: cgc_abund_pdf
     path "versions.yml", emit: versions
 
     when:
@@ -20,15 +20,18 @@ process RUNDBCAN_PLOT_CGC {
 
     script:
     def args = task.ext.args ?: ''
-    def prefix = task.ext.prefix ?: "${meta.id}_cgc_plot"
+    def prefix = task.ext.prefix ?: "${meta.id}_cgc_synteny_plot"
 
     """
+    mkdir -p ${prefix}
     plots.py CGC_synteny_coverage_plot \\
         -i ${dbcan_results} \\
         --cgcid '${cgc_id}' \\
         --readscount ${readscount} \\
         --db_dir ${dbcan_db} \\
         ${args}
+
+    mv *.pdf ${prefix}
 
 
     cat <<-END_VERSIONS > versions.yml

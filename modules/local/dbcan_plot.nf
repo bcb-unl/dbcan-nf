@@ -19,7 +19,7 @@ process RUNDBCAN_PLOT_BAR {
 
     script:
     def args = task.ext.args ?: ''
-    def meta_ids = meta_list
+    def meta_ids = meta_list instanceof List ? meta_list : [meta_list]
     def prefix = task.ext.prefix ?: "${meta_ids.join('_')}_pdf"
     def sample_names = meta_ids.join(',')
     def input_files_fam = abund_dirs.collect { "${it}/fam_abund.out" }.join(',')

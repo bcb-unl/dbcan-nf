@@ -36,7 +36,7 @@ workflow CGC_DEPTH_PLOT {
         ch_cgc_depth_input = ch_cgc_regions
             .combine(ch_bam_bai, by:0) //
 
-        ch_cgc_depth_input.view()
+        //ch_cgc_depth_input.view()
 
         // 4. calculate depth for each CGC region in each sample
         SAMTOOLS_DEPTH(
