@@ -215,8 +215,7 @@
             "default": 9606
         },
         "skip_kraken_extraction": {
-            "type": "boolean",
-            "default": true
+            "type": "boolean"
         },
         "flye_mode": {
             "type": "string",
@@ -224,6 +223,16 @@
         },
         "kraken_db": {
             "type": "string"
+        },
+        "subsample": {
+            "type": "boolean"
+        },
+        "subsample_size": {
+            "type": "integer",
+            "default": 10000000
+        },
+        "coassembly": {
+            "type": "boolean"
         }
     }
 }

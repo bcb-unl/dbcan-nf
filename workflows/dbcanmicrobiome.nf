@@ -29,7 +29,8 @@ include { RUNDBCAN_UTILS_CAL_ABUND     as RUNDBCAN_UTILS_CAL_ABUND_DNA    } from
 include { RUNDBCAN_UTILS_CAL_ABUND     as RUNDBCAN_UTILS_CAL_ABUND_RNA    } from '../modules/local/dbcan_utils_cal_abund'
 include { RUNDBCAN_PLOT_BAR            as RUNDBCAN_PLOT_BAR_DNA        } from '../modules/local/dbcan_plot'
 include { RUNDBCAN_PLOT_BAR            as RUNDBCAN_PLOT_BAR_RNA        } from '../modules/local/dbcan_plot'
-
+include { SEQTK_SAMPLE                 } from '../modules/nf-core/seqtk/sample/main'
+include { COMBINE_PAIRED_READS        } from '../modules/local/combine_raw_reads_before_coassembly'
 // new subworkflows
 include { FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS as FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_DNA } from '../subworkflows/nf-core/fastq_extract_kraken_krakentools'
 include { FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS as FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_RNA } from '../subworkflows/nf-core/fastq_extract_kraken_krakentools'
@@ -142,9 +143,66 @@ workflow DBCANMICROBIOME {
             }
                 }
                 }
-
         // MODULE: Megahit to assemble metagenomics
         // make sure all reads are the list
+    if (params.subsample && !params.coassembly) {
+        // Subsample each read (single/paired)
+        ch_subsample_input = ch_megahit_input_dna
+        .flatMap { meta, read1, read2 ->
+            def reads = read2 ? [read1, read2] : [read1]
+            reads.collect { tuple(meta, it, params.subsample_size as Integer) }
+        }
+
+        SEQTK_SAMPLE(ch_subsample_input)
+
+        ch_subsampled = SEQTK_SAMPLE.out.reads
+            .map { meta, reads -> tuple(meta, reads) }
+            .groupTuple(by: 0)
+            .map { meta, reads_list ->
+                if (reads_list.size() == 2) {
+                    tuple(meta, reads_list[0], reads_list[1])
+                } else {
+                    tuple(meta, reads_list[0], null)
+                }
+            }
+        ch_megahit_input_final = ch_subsampled
+
+    } else if (params.coassembly) {
+        // check at least 2 samples
+        ch_megahit_input_dna.count().subscribe { n ->
+            if (n < 2) {
+                error "Co-assembly mode requires at least 2 samples, but only ${n} sample(s) are present. Please do not use the --coassembly parameter with a single sample."
+            }
+        }
+        ch_megahit_input_dna.view()
+        // combine all reads for co-assembly
+        // This snippet prepares input for co-assembly in a DSL2-compliant way.
+        // Input: ch_megahit_input_dna (tuple(meta, read1, read2))
+        // Output: ch_coassembly_input (tuple(meta, all_read1, all_read2 OR null))
+
+        // [meta, r1, r2, meta, r1, r2, ...]
+        ch_coassembly_input = ch_megahit_input_dna
+            .collect()
+            .map { flat_list ->
+                def tuples = flat_list.collate(3) //
+                def all_read1 = tuples.collect { it[1] }
+                def all_read2 = tuples.collect { it[2] }.findAll { it }
+                def meta = [ id: 'coassembly', single_end: all_read2.isEmpty() ]
+                if (meta.single_end) {
+                    tuple(meta, all_read1, null)
+                } else {
+                    tuple(meta, all_read1, all_read2)
+                }
+            }
+
+        COMBINE_PAIRED_READS(ch_coassembly_input)
+        ch_megahit_input_final = COMBINE_PAIRED_READS.out.reads
+        ch_megahit_input_final.view()
+
+    } else {
+        // Use original reads
+        ch_megahit_input_final = ch_megahit_input_dna
+    }
 
         // pair-end for MEGAHIT
         MEGAHIT ( ch_megahit_input_dna )
