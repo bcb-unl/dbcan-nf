@@ -129,7 +129,7 @@ workflow DBCANMICROBIOME {
 
         if (!params.skip_kraken_extraction) {
             FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_DNA (
-                    ch_trimmed_reads,
+                    ch_trimmed_reads_dna,
                     ch_db_for_kraken2,
                     params.kraken_tax)
 
