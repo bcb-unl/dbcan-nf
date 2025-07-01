@@ -54,10 +54,10 @@ workflow DBCANMICROBIOME {
     take:
         ch_samplesheet
 
-
     main:
         ch_versions = Channel.empty()
         ch_multiqc_files = Channel.empty()
+
         // DNA channel
         ch_samplesheet_dna = ch_samplesheet
             .map { meta, fastqs, transcriptomes ->
@@ -109,7 +109,11 @@ workflow DBCANMICROBIOME {
             params.skip_fastqc,
             params.skip_trimming
         )
-
+        FASTQC_TRIMGALORE_RNA (
+            ch_samplesheet_rna,
+            params.skip_fastqc,
+            params.skip_trimming
+        )
 
         ch_multiqc_files = ch_multiqc_files.mix(
             FASTQC_TRIMGALORE_DNA.out.fastqc_zip.map{ it[1][0] }
@@ -117,6 +121,7 @@ workflow DBCANMICROBIOME {
 
         ch_versions = ch_versions.mix(FASTQC_TRIMGALORE_DNA.out.versions)
         ch_trimmed_reads_dna = FASTQC_TRIMGALORE_DNA.out.reads
+        ch_trimmed_reads_rna = FASTQC_TRIMGALORE_RNA.out.reads
 
         // 3. combine all reads for the kraken2
         //subworkflow to extract kraken2 reads
@@ -127,8 +132,13 @@ workflow DBCANMICROBIOME {
                     ch_db_for_kraken2,
                     params.kraken_tax)
 
+            FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_RNA (
+                    ch_trimmed_reads_rna,
+                    ch_db_for_kraken2,
+                    params.kraken_tax)
 
             ch_extracted_from_kraken2_reads_dna = FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_DNA.out.extracted_kraken2_reads
+            ch_extracted_from_kraken2_reads_rna = FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_RNA.out.extracted_kraken2_reads
 
             ch_multiqc_files = ch_multiqc_files.mix(FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_DNA.out.multiqc_files)
             ch_versions = ch_versions.mix ( FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_DNA.out.versions )
@@ -145,6 +155,14 @@ workflow DBCANMICROBIOME {
             }
                 }
 
+            ch_extracted_from_kraken2_reads_rna = ch_trimmed_reads_rna
+            .map { meta, reads_list ->
+                if (reads_list.size() == 2) {
+                    tuple(meta, reads_list[0], reads_list[1])
+                } else {
+                    tuple(meta, reads_list[0], null)
+                }
+            }
         }
             //ch_extracted_from_kraken2_reads_rna.view()
         // MODULE: Megahit to assemble metagenomics
@@ -230,127 +248,6 @@ workflow DBCANMICROBIOME {
         ch_gunzip_faa = GUNZIP_FAA.out.gunzip
         ch_gunzip_gff = GUNZIP_GFF.out.gunzip
         ch_versions = ch_versions.mix(GUNZIP_FAA.out.versions)
-
-        //
-        // MODULE: run_dbCAN to find CAZymes and CGCs in metagenomics data
-        //Will write it into subworkflow later
-
-        ch_gunzip_gff_with_type = ch_gunzip_gff.map { meta, gff -> tuple(meta, gff, 'prodigal') }
-
-        RUNDBCAN_EASYSUBSTRATE (
-            ch_gunzip_faa,
-            ch_gunzip_gff_with_type,
-            ch_dbcan_db_final
-        )
-
-        ch_versions = ch_versions.mix(RUNDBCAN_DATABASE.out.versions)
-        ch_dbcan_results = RUNDBCAN_EASYSUBSTRATE.out.dbcan_results
-
-        //ch_megahit_input_final_dna.view()
-
-        ch_bwameme_input_dna = ch_megahit_input_final_dna
-        //ch_bwameme_input_dna.view()
-        //ch_bwameme_input_rna.view()
-
-
-        //ch_bwameme_input_dna.view()
-        //
-        // Read mapping with BWA-MEME
-        BWA_INDEX_MEM_DNA (
-            ch_megahit_contigs_dna,
-            ch_bwameme_input_dna
-        )
-
-
-        //
-        ch_bam_bai_dna = BWA_INDEX_MEM_DNA.out.ch_bam_bai
-        ch_versions = ch_versions.mix(BWA_INDEX_MEM_DNA.out.versions)
-
-        ch_gff_bam_bai_dna = ch_gunzip_gff
-            .join(ch_bam_bai_dna, by: 0)
-            .map { meta, gff, bam, bai ->
-                tuple(meta, gff, bam, bai)
-            }
-
-
-
-        RUNDBCAN_UTILS_CAL_COVERAGE_DNA(
-            ch_gff_bam_bai_dna.map { meta, gff, bam, bai -> tuple(meta, gff) },
-            ch_gff_bam_bai_dna.map { meta, gff, bam, bai -> tuple(meta, bam, bai) }
-        )
-
-
-
-        ch_versions = ch_versions.mix(RUNDBCAN_UTILS_CAL_COVERAGE_DNA.out.versions)
-        ch_coverage_dna = RUNDBCAN_UTILS_CAL_COVERAGE_DNA.out.depth_txt
-
-        CGC_DEPTH_PLOT_DNA(
-            ch_dbcan_results,
-            ch_bam_bai_dna,
-            ch_dbcan_db_final
-        )
-
-
-        ch_versions = ch_versions.mix(CGC_DEPTH_PLOT_DNA.out.versions)
-        ch_cgc_depth_dna = CGC_DEPTH_PLOT_DNA.out.tsv
-
-        ch_abund_input_dna = ch_coverage_dna
-            .join(ch_dbcan_results, by: 0)
-            .map { meta, cgc_depth, dbcan_results -> tuple(meta, cgc_depth, dbcan_results) }
-
-
-        RUNDBCAN_UTILS_CAL_ABUND_DNA(
-            ch_abund_input_dna
-        )
-
-        //RUNDBCAN_UTILS_CAL_ABUND_DNA.out.abund_dir.view()
-        ch_plot_input_dna = RUNDBCAN_UTILS_CAL_ABUND_DNA.out.abund_dir
-        .toList()
-        .map { tuples ->
-            tuple(
-                tuples*.getAt(0).id,
-                tuples*.getAt(1)
-            )
-        }
-
-        //ch_plot_input.view()
-
-        //
-        RUNDBCAN_PLOT_BAR_DNA(ch_plot_input_dna)
-        ch_versions = ch_versions.mix(RUNDBCAN_PLOT_BAR_DNA.out.versions)
-
-
-        FASTQC_TRIMGALORE_RNA (
-            ch_samplesheet_rna,
-            params.skip_fastqc,
-            params.skip_trimming
-        )
-
-        ch_trimmed_reads_rna = FASTQC_TRIMGALORE_RNA.out.reads
-
-
-        if (!params.skip_kraken_extraction) {
-
-            FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_RNA (
-                    ch_trimmed_reads_rna,
-                    ch_db_for_kraken2,
-                    params.kraken_tax)
-
-            ch_extracted_from_kraken2_reads_rna = FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_RNA.out.extracted_kraken2_reads
-
-            //ch_megahit_input_dna.view()
-        // if skip kraken2 extraction, use trimmed reads
-        } else {
-            ch_extracted_from_kraken2_reads_rna = ch_trimmed_reads_rna
-            .map { meta, reads_list ->
-                if (reads_list.size() == 2) {
-                    tuple(meta, reads_list[0], reads_list[1])
-                } else {
-                    tuple(meta, reads_list[0], null)
-                }
-            }
-        }
-
         ch_gunzip_faa_rna = ch_gunzip_faa
             .map { meta, faa ->
                 def new_meta = meta.clone()
@@ -369,6 +266,20 @@ workflow DBCANMICROBIOME {
                 tuple(new_meta, gff)
             }
 
+        //
+        // MODULE: run_dbCAN to find CAZymes and CGCs in metagenomics data
+        //Will write it into subworkflow later
+
+        ch_gunzip_gff_with_type = ch_gunzip_gff.map { meta, gff -> tuple(meta, gff, 'prodigal') }
+
+        RUNDBCAN_EASYSUBSTRATE (
+            ch_gunzip_faa,
+            ch_gunzip_gff_with_type,
+            ch_dbcan_db_final
+        )
+
+        ch_versions = ch_versions.mix(RUNDBCAN_DATABASE.out.versions)
+        ch_dbcan_results = RUNDBCAN_EASYSUBSTRATE.out.dbcan_results
         ch_dbcan_results_rna = RUNDBCAN_EASYSUBSTRATE.out.dbcan_results
             .map { meta, dbcan_results ->
                 def new_meta = meta.clone()
@@ -377,7 +288,10 @@ workflow DBCANMICROBIOME {
                 }
                 tuple(new_meta, dbcan_results)
             }
+        //ch_megahit_input_final_dna.view()
 
+        ch_bwameme_input_dna = ch_megahit_input_final_dna
+        //ch_bwameme_input_dna.view()
         ch_bwameme_input_rna = ch_extracted_from_kraken2_reads_rna
         //ch_bwameme_input_rna.view()
 
@@ -385,14 +299,26 @@ workflow DBCANMICROBIOME {
         //ch_bwameme_input_dna.view()
         //
         // Read mapping with BWA-MEME
-
+        BWA_INDEX_MEM_DNA (
+            ch_megahit_contigs_dna,
+            ch_bwameme_input_dna
+        )
         BWA_INDEX_MEM_RNA (
             ch_megahit_contigs_dna,
             ch_bwameme_input_rna
         )
 
         //
+        ch_bam_bai_dna = BWA_INDEX_MEM_DNA.out.ch_bam_bai
         ch_bam_bai_rna = BWA_INDEX_MEM_RNA.out.ch_bam_bai
+        ch_bam_bai_rna.view()
+        ch_versions = ch_versions.mix(BWA_INDEX_MEM_DNA.out.versions)
+
+        ch_gff_bam_bai_dna = ch_gunzip_gff
+            .join(ch_bam_bai_dna, by: 0)
+            .map { meta, gff, bam, bai ->
+                tuple(meta, gff, bam, bai)
+            }
 
         ch_gff_bam_bai_rna = ch_gunzip_gff_rna
             .join(ch_bam_bai_rna, by: 0)
@@ -400,29 +326,59 @@ workflow DBCANMICROBIOME {
                 tuple(meta, gff, bam, bai)
             }
 
+        RUNDBCAN_UTILS_CAL_COVERAGE_DNA(
+            ch_gff_bam_bai_dna.map { meta, gff, bam, bai -> tuple(meta, gff) },
+            ch_gff_bam_bai_dna.map { meta, gff, bam, bai -> tuple(meta, bam, bai) }
+        )
+
         RUNDBCAN_UTILS_CAL_COVERAGE_RNA(
             ch_gff_bam_bai_rna.map { meta, gff, bam, bai -> tuple(meta, gff) },
             ch_gff_bam_bai_rna.map { meta, gff, bam, bai -> tuple(meta, bam, bai) }
         )
 
+        ch_versions = ch_versions.mix(RUNDBCAN_UTILS_CAL_COVERAGE_DNA.out.versions)
+        ch_coverage_dna = RUNDBCAN_UTILS_CAL_COVERAGE_DNA.out.depth_txt
         ch_coverage_rna = RUNDBCAN_UTILS_CAL_COVERAGE_RNA.out.depth_txt
+
+        CGC_DEPTH_PLOT_DNA(
+            ch_dbcan_results,
+            ch_bam_bai_dna,
+            ch_dbcan_db_final
+        )
 
         CGC_DEPTH_PLOT_RNA(
             ch_dbcan_results_rna,
             ch_bam_bai_rna,
             ch_dbcan_db_final
         )
+        ch_versions = ch_versions.mix(CGC_DEPTH_PLOT_DNA.out.versions)
+        ch_cgc_depth_dna = CGC_DEPTH_PLOT_DNA.out.tsv
         ch_cgc_depth_rna = CGC_DEPTH_PLOT_RNA.out.tsv
+
+        ch_abund_input_dna = ch_coverage_dna
+            .join(ch_dbcan_results, by: 0)
+            .map { meta, cgc_depth, dbcan_results -> tuple(meta, cgc_depth, dbcan_results) }
 
         ch_abund_input_rna = ch_coverage_rna
             .join(ch_dbcan_results_rna, by: 0)
             .map { meta, cgc_depth, dbcan_results -> tuple(meta, cgc_depth, dbcan_results) }
 
 
+        RUNDBCAN_UTILS_CAL_ABUND_DNA(
+            ch_abund_input_dna
+        )
         RUNDBCAN_UTILS_CAL_ABUND_RNA(
             ch_abund_input_rna
         )
         //RUNDBCAN_UTILS_CAL_ABUND_DNA.out.abund_dir.view()
+        ch_plot_input_dna = RUNDBCAN_UTILS_CAL_ABUND_DNA.out.abund_dir
+        .toList()
+        .map { tuples ->
+            tuple(
+                tuples*.getAt(0).id,
+                tuples*.getAt(1)
+            )
+        }
 
 
         ch_plot_input_rna = RUNDBCAN_UTILS_CAL_ABUND_RNA.out.abund_dir
@@ -434,11 +390,11 @@ workflow DBCANMICROBIOME {
             )
         }
         //ch_plot_input.view()
-
+        ch_plot_input_rna.view()
         //
+        RUNDBCAN_PLOT_BAR_DNA(ch_plot_input_dna)
         RUNDBCAN_PLOT_BAR_RNA(ch_plot_input_rna)
-
-
+        ch_versions = ch_versions.mix(RUNDBCAN_PLOT_BAR_DNA.out.versions)
 
     //
     // Collate and save software versions

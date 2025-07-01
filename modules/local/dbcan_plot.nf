@@ -16,6 +16,7 @@ process RUNDBCAN_PLOT_BAR {
 
     when:
     task.ext.when == null || task.ext.when
+    abund_dirs && abund_dirs.size() > 0
 
     script:
     def args = task.ext.args ?: ''
