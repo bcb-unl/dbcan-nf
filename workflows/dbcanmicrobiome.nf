@@ -62,7 +62,7 @@ workflow DBCANMICROBIOME {
         ch_samplesheet_dna = ch_samplesheet
             .map { meta, fastqs, transcriptomes ->
                 def fq_list = fastqs ?: []
-                def dna_meta = [ id: meta.id + '_dna', single_end: meta.single_end ]
+                def dna_meta = [ id: meta.id, type:'dna', single_end: meta.single_end ]
                 tuple(dna_meta, fq_list)
             }
             .filter { meta, fq_list -> fq_list && fq_list.size() > 0 }
@@ -71,7 +71,7 @@ workflow DBCANMICROBIOME {
         ch_samplesheet_rna = ch_samplesheet
             .map { meta, fastqs, transcriptomes ->
                 def t_list = transcriptomes ?: []
-                def rna_meta = [ id: meta.id + '_rna', single_end: meta.single_end ]
+                def rna_meta = [ id: meta.id, type:'rna', single_end: meta.single_end ]
                 tuple(rna_meta, t_list)
             }
             .filter { meta, t_list -> t_list && t_list.size() > 0 }
@@ -174,7 +174,7 @@ workflow DBCANMICROBIOME {
                 error "Co-assembly mode requires at least 2 samples, but only ${n} sample(s) are present. Please do not use the --coassembly parameter with a single sample."
             }
         }
-        ch_megahit_input_dna.view()
+        //ch_megahit_input_dna.view()
         // combine all reads for co-assembly
         // This snippet prepares input for co-assembly in a DSL2-compliant way.
         // Input: ch_megahit_input_dna (tuple(meta, read1, read2))
@@ -197,7 +197,7 @@ workflow DBCANMICROBIOME {
 
         COMBINE_PAIRED_READS(ch_coassembly_input)
         ch_megahit_input_final = COMBINE_PAIRED_READS.out.reads
-        ch_megahit_input_final.view()
+        //ch_megahit_input_final.view()
 
     } else {
         // Use original reads
@@ -308,7 +308,6 @@ workflow DBCANMICROBIOME {
         RUNDBCAN_PLOT_BAR_DNA(ch_plot_input_dna)
         //ch_samplesheet_rna.view()
 // only if ch_samplesheet_rna has content
-if (!ch_samplesheet_rna.ifEmpty([])) {
     // rna processing
     FASTQC_TRIMGALORE_RNA (
         ch_samplesheet_rna,
@@ -347,9 +346,13 @@ if (!ch_samplesheet_rna.ifEmpty([])) {
     ch_versions = ch_versions.mix(BWAMEME_INDEX_MEM_RNA.out.versions)
 
     ch_gff_bam_bai_rna = ch_gunzip_gff
-            .join(ch_bam_bai_rna, by: 0)
-            .map { meta, gff, bam, bai ->
-                tuple(meta, gff, bam, bai)
+            .map { meta, gff -> tuple(meta.id, meta, gff) }
+            .join(
+                ch_bam_bai_rna.map { meta, bam, bai -> tuple(meta.id, meta, bam, bai) },
+                by: 0
+            )
+            .map { id, meta_gff, gff, meta_bam, bam, bai ->
+                tuple(meta_gff, gff, bam, bai)
             }
 
     RUNDBCAN_UTILS_CAL_COVERAGE_RNA(
@@ -373,8 +376,14 @@ if (!ch_samplesheet_rna.ifEmpty([])) {
     ch_cgc_depth_rna = CGC_DEPTH_PLOT_RNA.out.tsv
 
     ch_abund_input_rna = ch_coverage_rna
-        .join(ch_dbcan_results, by: 0)
-        .map { meta, cgc_depth, dbcan_results -> tuple(meta, cgc_depth, dbcan_results) }
+        .map { meta, cgc_depth -> tuple(meta.id, meta, cgc_depth) }
+        .join(
+            ch_dbcan_results.map { meta, dbcan_results -> tuple(meta.id, meta, dbcan_results) },
+            by: 0
+        )
+        .map { id, meta_cov, cgc_depth, meta_dbcan, dbcan_results ->
+            tuple(meta_cov, cgc_depth, dbcan_results)
+        }
 
     RUNDBCAN_UTILS_CAL_ABUND_RNA(
         ch_abund_input_rna
@@ -388,8 +397,9 @@ if (!ch_samplesheet_rna.ifEmpty([])) {
                 tuples*.getAt(1)
             )
         }
+
     //RUNDBCAN_PLOT_BAR_RNA(ch_plot_input_rna)
-}
+
 
 
 
