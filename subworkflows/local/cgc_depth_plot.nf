@@ -44,7 +44,8 @@ workflow CGC_DEPTH_PLOT {
         )
 
         // 5. link depth results with dbcan results for plotting
-        ch_readscount = SAMTOOLS_DEPTH.out.tsv // : tuple(meta, tsv_path)
+        ch_readscount = SAMTOOLS_DEPTH.out.tsv
+        .filter { meta, tsv -> tsv.size() > 0 } // filter out empty results
 
         ch_plot_input = ch_readscount
            .combine(dbcan_folder, by: 0) // connect with dbcan results, tuple(meta, cgcid, tsv_path) + tuple(meta, dbcan_path)
@@ -62,6 +63,6 @@ workflow CGC_DEPTH_PLOT {
 
     emit:
         cgc_abund_pdf = RUNDBCAN_PLOT_CGC.out.cgc_abund_pdf
-        tsv = SAMTOOLS_DEPTH.out.tsv
+        tsv = SAMTOOLS_DEPTH.out.tsv.filter { meta, tsv -> tsv.size() > 0 }
         versions = SAMTOOLS_DEPTH.out.versions
 }
