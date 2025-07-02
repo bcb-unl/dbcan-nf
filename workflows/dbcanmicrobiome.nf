@@ -224,10 +224,15 @@ workflow DBCANMICROBIOME {
                 }
             }
 
-        COMBINE_PAIRED_READS(ch_coassembly_input)
+        COMBINE_PAIRED_READS(ch_coassembly_input_dna)
         ch_megahit_input_final_dna = COMBINE_PAIRED_READS.out.reads
-        //ch_megahit_input_final.view()
-
+        .map { meta, reads ->
+            if (meta.single_end) {
+                tuple(meta, reads[0], null)
+            } else {
+                tuple(meta, reads[0], reads[1])
+            }
+        }
     } else {
         // Use original reads
         ch_megahit_input_final_dna = ch_megahit_input_dna
