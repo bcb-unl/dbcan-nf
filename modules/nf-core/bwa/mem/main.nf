@@ -36,7 +36,7 @@ process BWA_MEM {
     def reference = fasta && extension=="cram"  ? "--reference ${fasta}" : ""
     if (!fasta && extension=="cram") error "Fasta reference is required for CRAM output"
     """
-    INDEX=`find -L ./ -name "*.amb" | sed 's/\\.amb\$//'`
+    INDEX=`find -L ./ -name "bwa_${prefix}.amb" | sed 's/\\.amb\$//'`
 
     bwa mem \\
         $args \\

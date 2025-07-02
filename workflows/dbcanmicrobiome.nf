@@ -67,7 +67,9 @@ workflow DBCANMICROBIOME {
             }
             .filter { meta, fq_list -> fq_list && fq_list.size() > 0 }
 
-        // RNA channel
+        // RNA channel, only use RNA samples when not subsample or coassembly
+        if (!params.subsample && !params.coassembly)
+        {
         ch_samplesheet_rna = ch_samplesheet
             .map { meta, fastqs, transcriptomes ->
                 def t_list = transcriptomes ?: []
@@ -75,6 +77,11 @@ workflow DBCANMICROBIOME {
                 tuple(rna_meta, t_list)
             }
             .filter { meta, t_list -> t_list && t_list.size() > 0 }
+        }
+        else
+        {
+            ch_samplesheet_rna = Channel.empty()
+        }
 
 
         //tmp view channels
@@ -311,7 +318,7 @@ workflow DBCANMICROBIOME {
         //
         ch_bam_bai_dna = BWA_INDEX_MEM_DNA.out.ch_bam_bai
         ch_bam_bai_rna = BWA_INDEX_MEM_RNA.out.ch_bam_bai
-        ch_bam_bai_rna.view()
+        //ch_bam_bai_rna.view()
         ch_versions = ch_versions.mix(BWA_INDEX_MEM_DNA.out.versions)
 
         ch_gff_bam_bai_dna = ch_gunzip_gff
@@ -390,7 +397,7 @@ workflow DBCANMICROBIOME {
             )
         }
         //ch_plot_input.view()
-        ch_plot_input_rna.view()
+        //ch_plot_input_rna.view()
         //
         RUNDBCAN_PLOT_BAR_DNA(ch_plot_input_dna)
         RUNDBCAN_PLOT_BAR_RNA(ch_plot_input_rna)

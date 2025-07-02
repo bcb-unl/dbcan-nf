@@ -11,7 +11,7 @@ process RUNDBCAN_PLOT_BAR {
     tuple val(meta_list), path(abund_dirs)
 
     output:
-    tuple val(meta_list), path("*pdf"), emit: plot_dir
+    tuple val(meta_list), path("*_pdf"), emit: plot_dir
     path "versions.yml", emit: versions
 
     when:
@@ -29,7 +29,6 @@ process RUNDBCAN_PLOT_BAR {
     def input_files_fam_substrate = abund_dirs.collect { "${it}/fam_substrate_abund.out" }.join(',')
 
     """
-
     mkdir -p ${prefix}
 
     plots.py heatmap_plot \\
@@ -39,7 +38,9 @@ process RUNDBCAN_PLOT_BAR {
         --top 20 \\
         ${args}
 
-    mv heatmap.pdf ${prefix}
+    if [  -f heatmap.pdf ]; then
+        mv heatmap.pdf ${prefix}
+    fi
 
     plots.py bar_plot \\
         --samples ${sample_names} \\
