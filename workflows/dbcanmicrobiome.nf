@@ -23,6 +23,7 @@ include { RUNDBCAN_DATABASE               } from '../modules/nf-core/rundbcan/da
 include { RUNDBCAN_EASYSUBSTRATE          } from '../modules/nf-core/rundbcan/easysubstrate/main'
 include { RUNDBCAN_UTILS_CAL_COVERAGE  as RUNDBCAN_UTILS_CAL_COVERAGE_DNA  } from '../modules/local/dbcan_utils_cal_coverage'
 include { RUNDBCAN_UTILS_CAL_COVERAGE  as RUNDBCAN_UTILS_CAL_COVERAGE_RNA  } from '../modules/local/dbcan_utils_cal_coverage'
+include { BWA_INDEX                     } from '../modules/nf-core/bwa/index/main'
 include { SAMTOOLS_INDEX               as SAMTOOLS_INDEX_DNA         } from '../modules/nf-core/samtools/index/main'
 include { SAMTOOLS_INDEX               as SAMTOOLS_INDEX_RNA         } from '../modules/nf-core/samtools/index/main'
 include { RUNDBCAN_UTILS_CAL_ABUND     as RUNDBCAN_UTILS_CAL_ABUND_DNA    } from '../modules/local/dbcan_utils_cal_abund'
@@ -184,16 +185,19 @@ workflow DBCANMICROBIOME {
 
         SEQTK_SAMPLE(ch_subsample_input_dna)
 
-        ch_subsampled_dna = SEQTK_SAMPLE.out.reads
-            .map { meta, reads -> tuple(meta, reads) }
-            .groupTuple(by: 0)
-            .map { meta, reads_list ->
-                if (reads_list.size() == 2) {
-                    tuple(meta, reads_list[0], reads_list[1])
-                } else {
-                    tuple(meta, reads_list[0], null)
-                }
+    ch_subsampled_dna = SEQTK_SAMPLE.out.reads
+        .map { meta, reads -> tuple(meta, reads) }
+        .groupTuple(by: 0)
+        .map { meta, reads_list ->
+            def subsample_meta = meta.clone()
+            subsample_meta.id = meta.id + '_subsample'
+            def sorted_reads = reads_list.sort { it.toString() }
+            if (sorted_reads.size() == 2) {
+                tuple(subsample_meta, sorted_reads[0], sorted_reads[1])
+            } else {
+                tuple(subsample_meta, sorted_reads[0], null)
             }
+        }
         ch_megahit_input_final_dna = ch_subsampled_dna
 
     } else if (params.coassembly) {
@@ -307,17 +311,73 @@ workflow DBCANMICROBIOME {
         ch_bwameme_input_rna = ch_extracted_from_kraken2_reads_rna
         //ch_bwameme_input_rna.view()
 
+        //
+        BWA_INDEX(
+            ch_megahit_contigs_dna
+        )
+
+        ch_index_dna = BWA_INDEX.out.index
+
+        ch_versions = ch_versions.mix(BWA_INDEX.out.versions)
 
         //ch_bwameme_input_dna.view()
         //
         // Read mapping with BWA-MEME
-        BWA_INDEX_MEM_DNA (
-            ch_megahit_contigs_dna,
-            ch_bwameme_input_dna
+        ch_bwa_mem_input = ch_bwameme_input_dna
+            .join(ch_index_dna)
+            .join(ch_megahit_contigs_dna)
+            .map { meta, read1, read2, index_dir, fasta ->
+                tuple(meta, read1, read2, index_dir, fasta)
+            }
+
+
+        ch_fastq = ch_bwa_mem_input.map { t -> tuple(t[0], t[1], t[2]) } // (meta, read1, read2)
+        ch_index = ch_bwa_mem_input.map { t -> tuple(t[0], t[3]) }      // (meta, index)
+        ch_genome_fna = ch_bwa_mem_input.map { t -> tuple(t[0], t[4]) } // (meta, fasta)
+
+        BWA_INDEX_MEM_DNA(
+            ch_index,
+            ch_genome_fna,
+            ch_fastq
         )
+
+        //
+        // Prepare channels for RNA mapping
+        //
+
+        // 1. Create RNA-specific versions of index and contigs channels by updating the meta.id
+        def ch_index_rna = ch_index_dna.map { meta, index_dir ->
+            def rna_meta = meta.clone()
+            rna_meta.id = rna_meta.id.endsWith('_dna') ? rna_meta.id.replaceFirst(/_dna$/, '_rna') : rna_meta.id + '_rna'
+            tuple(rna_meta, index_dir)
+        }
+
+        def ch_contigs_rna = ch_megahit_contigs_dna.map { meta, fasta ->
+            def rna_meta = meta.clone()
+            rna_meta.id = rna_meta.id.endsWith('_dna') ? rna_meta.id.replaceFirst(/_dna$/, '_rna') : rna_meta.id + '_rna'
+            tuple(rna_meta, fasta)
+        }
+
+        // 2. Join RNA reads with the newly created RNA-specific index and contigs channels
+        def ch_bwa_mem_input_rna = ch_bwameme_input_rna
+            .join(ch_index_rna, by: 0)
+            .join(ch_contigs_rna, by: 0)
+            .map { meta, read1, read2, index_tuple, fasta_tuple ->
+                // The structure of the joined tuple is [meta, read1, read2, [meta, index], [meta, fasta]]
+                // We flatten it to a simple tuple
+                tuple(meta, read1, read2, index_tuple[1], fasta_tuple[1])
+            }
+
+        // 3. Split the combined channel into three separate channels for the subworkflow, just like for DNA
+        def ch_fastq_rna = ch_bwa_mem_input_rna.map { t -> tuple(t[0], t[1], t[2]) }
+        def ch_index_rna_final = ch_bwa_mem_input_rna.map { t -> tuple(t[0], t[3]) }
+        def ch_genome_fna_rna = ch_bwa_mem_input_rna.map { t -> tuple(t[0], t[4]) }
+
+        // 4. Call the RNA subworkflow with the correctly matched channels
         BWA_INDEX_MEM_RNA (
-            ch_megahit_contigs_dna,
-            ch_bwameme_input_rna
+            ch_index_rna_final,
+            ch_genome_fna_rna,
+            ch_fastq_rna
         )
 
         //

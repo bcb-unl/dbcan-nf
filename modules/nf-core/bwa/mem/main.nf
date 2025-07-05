@@ -8,9 +8,9 @@ process BWA_MEM {
         'community.wave.seqera.io/library/bwa_htslib_samtools:56c9f8d5201889a4' }"
 
     input:
-    tuple val(meta) , path(reads)
-    tuple val(meta2), path(index)
-    tuple val(meta3), path(fasta)
+    tuple val(meta) , path(read1), path(read2)
+    tuple val(meta), path(index)
+    tuple val(meta2), path(fasta)
     val   sort_bam
 
     output:
@@ -36,14 +36,13 @@ process BWA_MEM {
     def reference = fasta && extension=="cram"  ? "--reference ${fasta}" : ""
     if (!fasta && extension=="cram") error "Fasta reference is required for CRAM output"
     """
-    INDEX=`find -L ./ -name "bwa_${prefix}.amb" | sed 's/\\.amb\$//'`
+    INDEX=`find -L ./ -name "*.amb" | sed 's/\\.amb\$//'`
 
     bwa mem \\
         $args \\
         -t $task.cpus \\
-        \$INDEX \\
-        $reads \\
-        | samtools $samtools_command $args2 ${reference} --threads $task.cpus -o ${prefix}.${extension} -
+        bwa_${meta.id}/bwa_${meta.id} \\
+        $read1 $read2 | samtools $samtools_command $args2 ${reference} --threads $task.cpus -o ${prefix}.${extension} -
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

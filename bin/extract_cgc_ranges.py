@@ -10,9 +10,8 @@ out_tsv = sys.argv[3]
 
 # read substrate_prediction.tsv and extract CGCID set
 substrate = pd.read_csv(substrate_tsv, sep='\t')
-#print(substrate)
+substrate = substrate[substrate['PULID'].notna()]
 cgcid_set = set(substrate['#cgcid'].astype(str))
-#print(cgcid_set)
 
 # read cgc_standard_out.tsv
 df = pd.read_csv(cgc_tsv, sep='\t')
