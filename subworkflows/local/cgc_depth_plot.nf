@@ -21,7 +21,7 @@ workflow CGC_DEPTH_PLOT {
                 //
                 if (cgc_ranges_file.size() > 0) {
                     cgc_ranges_file.splitCsv(header:true, sep:'\t')
-                        .findAll { row -> row['Contig ID'] && row['Gene Start'] && row['Gene Stop'] } // 确保行数据完整
+                        .findAll { row -> row['Contig ID'] && row['Gene Start'] && row['Gene Stop'] } // filter out empty rows
                         .collect { row ->
                             def region = "${row['Contig ID']}:${row['Gene Start']}-${row['Gene Stop']}"
                             tuple(meta, row['CGCID'], region)

@@ -16,19 +16,26 @@ cgcid_set = set(substrate['#cgcid'].astype(str))
 # read cgc_standard_out.tsv
 df = pd.read_csv(cgc_tsv, sep='\t')
 df['CGCID'] = df['Contig ID'].astype(str) + '|' + df['CGC#'].astype(str)
-df = df.drop_duplicates(subset=['CGCID'])
 
-#print(df['CGCID'])
-
-# only keep rows where CGCID is in the substrate set
+#   only keep CGCIDs that are in the substrate set
 df = df[df['CGCID'].isin(cgcid_set)]
 
-# group by CGCID and get the first Contig ID, min Gene Start, and max Gene Stop
-ranges = df.groupby('CGCID').agg({
-    'Contig ID': 'first',
-    'CGC#': 'first',
-    'Gene Start': 'min',
-    'Gene Stop': 'max'
-}).reset_index()
+# for each CGCID, get the range of gene start and stop positions
+def get_cgc_range(group):
+    group_sorted = group.sort_values('Gene Start')
+    first_gene = group_sorted.iloc[0]
+    last_gene = group_sorted.iloc[-1]
+    return pd.Series({
+        'Contig ID': first_gene['Contig ID'],
+        'CGC#': first_gene['CGC#'],
+        'Gene Start': first_gene['Gene Start'],
+        'Gene Stop': last_gene['Gene Stop']
+    })
+
+ranges = (
+    df.groupby('CGCID', group_keys=False)
+      .apply(get_cgc_range)
+      .reset_index()
+)
 
 ranges.to_csv(out_tsv, sep='\t', index=False, header=True)
