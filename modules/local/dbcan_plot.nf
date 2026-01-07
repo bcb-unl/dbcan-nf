@@ -2,10 +2,10 @@ process RUNDBCAN_PLOT_BAR {
     tag "${meta_list.join('_')}"
     label 'process_medium'
 
-    conda "bioconda::dbcan=5.1.2"
+    conda "bioconda::dbcan=5.2.2"
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/dbcan:5.1.2--pyhdfd78af_0' :
-        'biocontainers/dbcan:5.1.2--pyhdfd78af_0' }"
+        'https://depot.galaxyproject.org/singularity/dbcan:5.2.2--pyhdfd78af_0' :
+        'biocontainers/dbcan:5.2.2--pyhdfd78af_0' }"
 
     input:
     tuple val(meta_list), path(abund_dirs)
@@ -31,7 +31,7 @@ process RUNDBCAN_PLOT_BAR {
     """
     mkdir -p ${prefix}
 
-    plots.py heatmap_plot \\
+    dbcan_plot heatmap_plot \\
         --samples ${sample_names} \\
         -i ${input_files_fam_substrate} \\
         --show_abund \\
@@ -42,7 +42,7 @@ process RUNDBCAN_PLOT_BAR {
         mv heatmap.pdf ${prefix}
     fi
 
-    plots.py bar_plot \\
+    dbcan_plot bar_plot \\
         --samples ${sample_names} \\
         --vertical_bar \\
         --top 20 \\
@@ -50,7 +50,7 @@ process RUNDBCAN_PLOT_BAR {
         --pdf ${prefix}/fam.pdf \\
         ${args}
 
-    plots.py bar_plot \\
+    dbcan_plot bar_plot \\
         --samples ${sample_names} \\
         --vertical_bar \\
         --top 20 \\
@@ -58,7 +58,7 @@ process RUNDBCAN_PLOT_BAR {
         --pdf ${prefix}/subfam.pdf \\
         ${args}
 
-    plots.py bar_plot \\
+    dbcan_plot bar_plot \\
         --samples ${sample_names} \\
         --vertical_bar \\
         --top 20 \\

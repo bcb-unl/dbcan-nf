@@ -1,0 +1,37 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/nf-core/modules/master/modules/meta-schema.json
+name: "download_cazy_dmnd"
+description: Download and build CAZy DIAMOND database for assembly-free analysis
+keywords:
+  - CAZy
+  - diamond
+  - database
+  - download
+tools:
+  - diamond:
+      description: Accelerated BLAST compatible local sequence aligner
+      homepage: https://github.com/bbuchfink/diamond
+      documentation: https://github.com/bbuchfink/diamond/wiki
+      tool_dev_url: https://github.com/bbuchfink/diamond
+      doi: "10.1038/s41592-021-01101-x"
+      licence: ["GPL v3.0"]
+      identifier: biotools:diamond
+
+input:
+output:
+  - cazy_dmnd:
+      - CAZy.dmnd:
+          type: file
+          description: DIAMOND database file for CAZy sequences
+          pattern: "CAZy.dmnd"
+  - versions:
+      - versions.yml:
+          type: file
+          description: File containing software versions
+          pattern: "versions.yml"
+
+authors:
+  - "@Xinpeng021001"
+maintainers:
+  - "@Xinpeng021001"
+

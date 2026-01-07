@@ -2,10 +2,10 @@ process RUNDBCAN_PLOT_CGC {
     tag "${meta.id} cgc_plot"
     label 'process_medium'
 
-    conda "bioconda::dbcan=5.1.2"
+    conda "bioconda::dbcan=5.2.2"
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/dbcan:5.1.2--pyhdfd78af_0' :
-        'biocontainers/dbcan:5.1.2--pyhdfd78af_0' }"
+        'https://depot.galaxyproject.org/singularity/dbcan:5.2.2--pyhdfd78af_0' :
+        'biocontainers/dbcan:5.2.2--pyhdfd78af_0' }"
 
     input:
     tuple val(meta), path(dbcan_results), val(cgc_id), path(readscount)
@@ -25,7 +25,7 @@ process RUNDBCAN_PLOT_CGC {
     def prefix = task.ext.prefix ?: "${meta.id}_cgc_synteny_plot"
 
     """
-    plots.py CGC_synteny_coverage_plot \\
+    dbcan_plot CGC_synteny_coverage_plot \\
         -i ${dbcan_results} \\
         --cgcid '${cgc_id}' \\
         --readscount ${readscount} \\

@@ -1,4 +1,4 @@
-process RUNDBCAN_UTILS_CAL_COVERAGE {
+process RUNDBCAN_ASMFREE_EC_ABUND {
     tag "$meta.id"
     label 'process_medium'
 
@@ -6,31 +6,36 @@ process RUNDBCAN_UTILS_CAL_COVERAGE {
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
         'https://depot.galaxyproject.org/singularity/dbcan:5.2.2--pyhdfd78af_0' :
         'biocontainers/dbcan:5.2.2--pyhdfd78af_0' }"
-
+    
     input:
-    tuple val(meta), path(gff)
-    tuple val(meta), path(bam), path(bai)
+    tuple val(meta), path(input_dir)  // Input directory from subfam_abund
+    path db_dir     // Directory containing subfam_EC_mapping.tsv
 
     output:
-    tuple val(meta), path("${prefix}.depth.txt")               , emit: depth_txt
-    path  "versions.yml"                                       , emit: versions
+    tuple val(meta), path("*_abund") , emit: abund_dir
+    path  "versions.yml"             , emit: versions
 
     when:
     task.ext.when == null || task.ext.when
 
     script:
     def args = task.ext.args ?: ''
-    prefix = task.ext.prefix ?: "${meta.id}"
-    """
+    def prefix = task.ext.prefix ?: "${meta.id}_abund"
+    
+    // Copy db directory into per-sample folder so dbcan_asmfree can find subfam_EC_mapping.tsv
+    def cmd = """
+    mkdir -p ${prefix}
+    cp -r ${db_dir} ${prefix}/db || true
+    cd ${prefix}
 
-    dbcan_utils cal_coverage \\
-    -g ${gff} \\
-    -i ${bam} \\
-    -o ${prefix}.depth.txt \\
-    --overlap_base_ratio 0.2 \\
-    --mapping_quality 30 \\
-    --identity 0.98 \\
-    ${args}
+    dbcan_asmfree diamond_EC_abund"""
+    cmd += " -i ../${input_dir}"
+    cmd += " -o ${prefix}"
+    cmd += " ${args}"
+    
+
+    """
+    ${cmd}
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -39,10 +44,9 @@ process RUNDBCAN_UTILS_CAL_COVERAGE {
     """
 
     stub:
-    def args = task.ext.args ?: ''
-    prefix = task.ext.prefix ?: "${meta.id}"
+    def prefix = task.ext.prefix ?: "${meta.id}_abund"
     """
-    touch ${prefix}_depth.txt
+    mkdir -p ${prefix}
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -50,3 +54,4 @@ process RUNDBCAN_UTILS_CAL_COVERAGE {
     END_VERSIONS
     """
 }
+

@@ -19,17 +19,23 @@
 
 ## Introduction
 
-**nf-core/dbcanmicrobiome** is a bioinformatics pipeline that ...
+**nf-core/dbcanmicrobiome** is a bioinformatics pipeline for carbohydrate-active enzyme (CAZyme) annotation and analysis in microbiome data. The pipeline implements the protocol described in "Carbohydrate-active enzyme annotation in microbiomes using dbCAN" (bioRxiv) and supports three analysis modes:
 
-<!-- TODO nf-core:
-   Complete this sentence with a 2-3 sentence summary of what types of data the pipeline ingests, a brief overview of the
-   major pipeline sections and the types of output it produces. You're giving an overview to someone new
-   to nf-core here, in 15-20 seconds. For an example, see https://github.com/nf-core/rnaseq/blob/master/README.md#introduction
--->
+- **Short reads**: Assembly-based analysis using MEGAHIT for short-read metagenomic data
+- **Long reads**: Assembly-based analysis using Flye for long-read metagenomic data  
+- **Assembly free**: Direct annotation without assembly using DIAMOND blastx
 
-<!-- TODO nf-core: Include a figure that guides the user through the major workflow steps. Many nf-core
-     workflows use the "tube map" design for that. See https://nf-co.re/docs/contributing/design_guidelines#examples for examples.   -->
-<!-- TODO nf-core: Fill in short bullet-pointed list of the default steps in the pipeline -->1. Read QC ([`FastQC`](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/))2. Present QC for raw reads ([`MultiQC`](http://multiqc.info/))
+The pipeline performs quality control, optional taxonomic filtering, gene prediction (for assembly-based modes), CAZyme annotation using dbCAN, abundance calculation, and visualization.
+
+The pipeline is built using [Nextflow](https://www.nextflow.io/) and processes data using the following steps:
+
+1. Read QC ([`FastQC`](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/))
+2. Read trimming ([`TrimGalore`](https://www.bioinformatics.babraham.ac.uk/projects/trim_galore/))
+3. Optional taxonomic filtering ([`Kraken2`](https://ccb.jhu.edu/software/kraken2/))
+4. Assembly (for short/long reads modes) or direct annotation (assembly free mode)
+5. CAZyme annotation ([`dbCAN`](https://bcb.unl.edu/dbCAN2/))
+6. Abundance calculation and visualization
+7. Present QC for raw reads ([`MultiQC`](http://multiqc.info/))
 
 ## Usage
 

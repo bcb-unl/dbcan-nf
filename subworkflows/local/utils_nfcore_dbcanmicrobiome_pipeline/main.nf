@@ -67,19 +67,36 @@ workflow PIPELINE_INITIALISATION {
     // Create channel from input file provided through params.input
     //
 
-    Channel
-        .fromList(samplesheetToList(params.input, "${projectDir}/assets/schema_input.json"))
-        .map { meta, fastq_1, fastq_2, transcriptome_1, transcriptome_2 ->
-            def meta_map = meta + [
-                single_end: !fastq_2,
-                transcriptome: (transcriptome_1 ? true : false),
-                transcriptome_single_end: (!transcriptome_2 && transcriptome_1) ? true : false
-            ]
-            def fastqs = [fastq_1, fastq_2].findAll { it }
-            def transcriptomes = [transcriptome_1, transcriptome_2].findAll { it }
-            tuple(meta_map, fastqs, transcriptomes)
-        }
-        .set { ch_samplesheet }
+        ch_samplesheet = Channel
+            .fromList(samplesheetToList(params.input, "${projectDir}/assets/schema_input.json"))
+            .map { meta, fastq_1, fastq_2, transcriptome_1, transcriptome_2 ->
+                if (params.type == "shortreads") {
+                    def meta_map = meta + [
+                        single_end: !fastq_2,
+                        transcriptome: (transcriptome_1 ? true : false),
+                        transcriptome_single_end: (!transcriptome_2 && transcriptome_1) ? true : false
+                    ]
+                    def fastqs = [fastq_1, fastq_2].findAll { it }
+                    def transcriptomes = [transcriptome_1, transcriptome_2].findAll { it }
+                    tuple(meta_map, fastqs, transcriptomes)
+                } else if (params.type == "longreads") {
+                    def meta_map = meta + [
+                        long_reads: true,
+                        transcriptome: (transcriptome_1 ? true : false)
+                    ]
+                    def long_reads = [fastq_1, fastq_2].findAll { it }
+                    def transcriptomes = [transcriptome_1, transcriptome_2].findAll { it }
+                    tuple(meta_map, long_reads, transcriptomes)
+                } else if (params.type == "assemfree") {
+                    def meta_map = meta + [
+                        single_end: !fastq_2
+                    ]
+                    def fastqs = [fastq_1, fastq_2].findAll { it }
+                    tuple(meta_map, fastqs)
+                } else {
+                    error "Unknown input_mode: ${params.type}"
+                }
+            }
 
     emit:
     samplesheet = ch_samplesheet

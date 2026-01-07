@@ -229,10 +229,14 @@
         },
         "subsample_size": {
             "type": "integer",
-            "default": 10000000
+            "default": 20000000
         },
         "coassembly": {
             "type": "boolean"
+        },
+        "type": {
+            "type": "string",
+            "default": "shortreads"
         }
     }
 }

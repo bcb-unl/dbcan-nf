@@ -117,11 +117,18 @@ workflow DBCANMICROBIOME {
             params.skip_fastqc,
             params.skip_trimming
         )
-        FASTQC_TRIMGALORE_RNA (
-            ch_samplesheet_rna,
-            params.skip_fastqc,
-            params.skip_trimming
-        )
+
+        // 在使用 RNA channels 之前添加检查
+        if (!params.subsample && !params.coassembly) {
+            FASTQC_TRIMGALORE_RNA (
+                ch_samplesheet_rna,
+                params.skip_fastqc,
+                params.skip_trimming
+            )
+            ch_trimmed_reads_rna = FASTQC_TRIMGALORE_RNA.out.reads
+        } else {
+            ch_trimmed_reads_rna = Channel.empty()
+        }
 
         ch_multiqc_files = ch_multiqc_files.mix(
             FASTQC_TRIMGALORE_DNA.out.fastqc_zip.map{ it[1][0] }
@@ -129,7 +136,6 @@ workflow DBCANMICROBIOME {
 
         ch_versions = ch_versions.mix(FASTQC_TRIMGALORE_DNA.out.versions)
         ch_trimmed_reads_dna = FASTQC_TRIMGALORE_DNA.out.reads
-        ch_trimmed_reads_rna = FASTQC_TRIMGALORE_RNA.out.reads
 
         // 3. combine all reads for the kraken2
         //subworkflow to extract kraken2 reads
@@ -294,7 +300,7 @@ workflow DBCANMICROBIOME {
             ch_dbcan_db_final
         )
 
-        ch_versions = ch_versions.mix(RUNDBCAN_DATABASE.out.versions)
+        ch_versions = ch_versions.mix(RUNDBCAN_EASYSUBSTRATE.out.versions)
         ch_dbcan_results = RUNDBCAN_EASYSUBSTRATE.out.dbcan_results
         ch_dbcan_results_rna = RUNDBCAN_EASYSUBSTRATE.out.dbcan_results
             .map { meta, dbcan_results ->
@@ -342,49 +348,56 @@ workflow DBCANMICROBIOME {
         )
 
         //
-        // Prepare channels for RNA mapping
+        // Prepare channels for RNA mapping (reuse DNA index prefix)
         //
 
-        // 1. Create RNA-specific versions of index and contigs channels by updating the meta.id
-        def ch_index_rna = ch_index_dna.map { meta, index_dir ->
-            def rna_meta = meta.clone()
-            rna_meta.id = rna_meta.id.endsWith('_dna') ? rna_meta.id.replaceFirst(/_dna$/, '_rna') : rna_meta.id + '_rna'
-            tuple(rna_meta, index_dir)
+        // 基于样本名的 join key（去掉 _rna/_dna）
+        ch_bwameme_input_rna_keyed = ch_bwameme_input_rna.map { meta, r1, r2 ->
+            def key = meta.id.replaceFirst(/_rna$/, '')
+            tuple(key, meta, r1, r2)
         }
 
-        def ch_contigs_rna = ch_megahit_contigs_dna.map { meta, fasta ->
-            def rna_meta = meta.clone()
-            rna_meta.id = rna_meta.id.endsWith('_dna') ? rna_meta.id.replaceFirst(/_dna$/, '_rna') : rna_meta.id + '_rna'
-            tuple(rna_meta, fasta)
+        ch_index_dna_keyed = ch_index_dna.map { meta, idx ->
+            def key = meta.id.replaceFirst(/_dna$/, '')
+            tuple(key, meta, idx)
         }
 
-        // 2. Join RNA reads with the newly created RNA-specific index and contigs channels
-        def ch_bwa_mem_input_rna = ch_bwameme_input_rna
-            .join(ch_index_rna, by: 0)
-            .join(ch_contigs_rna, by: 0)
-            .map { meta, read1, read2, index_tuple, fasta_tuple ->
-                // The structure of the joined tuple is [meta, read1, read2, [meta, index], [meta, fasta]]
-                // We flatten it to a simple tuple
-                tuple(meta, read1, read2, index_tuple[1], fasta_tuple[1])
+        ch_contigs_dna_keyed = ch_megahit_contigs_dna.map { meta, fasta ->
+            def key = meta.id.replaceFirst(/_dna$/, '')
+            tuple(key, meta, fasta)
+        }
+
+        // join RNA reads with DNA index/contigs using基准 key
+        ch_bwa_mem_input_rna = ch_bwameme_input_rna_keyed
+            .join(ch_index_dna_keyed, by: 0)
+            .join(ch_contigs_dna_keyed, by: 0)
+            .map { key, meta_rna, r1, r2, meta_idx, idx, meta_ctg, fasta ->
+                // 让 BWA 使用 DNA meta（含 *_dna 前缀），以匹配已生成的索引前缀
+                tuple(meta_idx, r1, r2, idx, fasta)
             }
 
-        // 3. Split the combined channel into three separate channels for the subworkflow, just like for DNA
-        def ch_fastq_rna = ch_bwa_mem_input_rna.map { t -> tuple(t[0], t[1], t[2]) }
-        def ch_index_rna_final = ch_bwa_mem_input_rna.map { t -> tuple(t[0], t[3]) }
-        def ch_genome_fna_rna = ch_bwa_mem_input_rna.map { t -> tuple(t[0], t[4]) }
+        // 分拆为子工作流输入
+        ch_fastq_rna       = ch_bwa_mem_input_rna.map { t -> tuple(t[0], t[1], t[2]) }
+        ch_index_rna_final = ch_bwa_mem_input_rna.map { t -> tuple(t[0], t[3]) }
+        ch_genome_fna_rna  = ch_bwa_mem_input_rna.map { t -> tuple(t[0], t[4]) }
 
-        // 4. Call the RNA subworkflow with the correctly matched channels
+        // 调用 RNA 子工作流（内部会用 *_dna 前缀的索引）
         BWA_INDEX_MEM_RNA (
             ch_index_rna_final,
             ch_genome_fna_rna,
             ch_fastq_rna
         )
 
+        // 将输出 meta 从 *_dna 改回 *_rna，便于后续 join
+        ch_bam_bai_rna = BWA_INDEX_MEM_RNA.out.ch_bam_bai.map { meta, bam, bai ->
+            def new_meta = meta.clone()
+            new_meta.id = new_meta.id.replaceFirst(/_dna$/, '_rna')
+            tuple(new_meta, bam, bai)
+        }
+
         //
         ch_bam_bai_dna = BWA_INDEX_MEM_DNA.out.ch_bam_bai
-        ch_bam_bai_rna = BWA_INDEX_MEM_RNA.out.ch_bam_bai
-        //ch_bam_bai_rna.view()
-        ch_versions = ch_versions.mix(BWA_INDEX_MEM_DNA.out.versions)
+        // ch_bam_bai_rna = BWA_INDEX_MEM_RNA.out.ch_bam_bai   // 删除这行覆盖
 
         ch_gff_bam_bai_dna = ch_gunzip_gff
             .join(ch_bam_bai_dna, by: 0)

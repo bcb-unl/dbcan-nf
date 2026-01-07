@@ -15,30 +15,16 @@ include { KRAKEN2_BUILDSTANDARD           } from '../modules/nf-core/kraken2/bui
 include { KRAKEN2_KRAKEN2                 } from '../modules/nf-core/kraken2/kraken2/main'
 include { KRAKENTOOLS_EXTRACTKRAKENREADS  } from '../modules/nf-core/krakentools/extractkrakenreads/main'
 include { TRIMGALORE                      } from '../modules/nf-core/trimgalore/main'
-include { MEGAHIT                         } from '../modules/nf-core/megahit/main'
-include { PYRODIGAL                       } from '../modules/nf-core/pyrodigal/main'
-include { GUNZIP as GUNZIP_FAA            } from '../modules/nf-core/gunzip/main'
-include { GUNZIP as GUNZIP_GFF            } from '../modules/nf-core/gunzip/main'
-include { RUNDBCAN_DATABASE               } from '../modules/nf-core/rundbcan/database/main'
-include { RUNDBCAN_EASYSUBSTRATE          } from '../modules/nf-core/rundbcan/easysubstrate/main'
-
-include { FLYE                            } from '../modules/nf-core/flye/main'
-include { RUNDBCAN_UTILS_CAL_COVERAGE     } from '../modules/local/dbcan_utils_cal_coverage'
-include { SAMTOOLS_INDEX                  } from '../modules/nf-core/samtools/index/main'
-include { RUNDBCAN_UTILS_CAL_ABUND        } from '../modules/local/dbcan_utils_cal_abund'
-include { RUNDBCAN_PLOT_BAR               } from '../modules/local/dbcan_plot'
-
+include { SEQTK_SEQ                      } from '../modules/nf-core/seqtk/seq/main'
+include { DIAMOND_BLASTX                  } from '../modules/nf-core/diamond/blastx/main'
+include { RUNDBCAN_ASMFREE_CAL_ABUND      } from '../modules/local/dbcan_asmfree_cal_abund'
+include { DOWNLOAD_CAZY_DMND              } from '../modules/local/download_cazy_dmnd/main'
+include { RUNDBCAN_PLOT_BAR            as RUNDBCAN_PLOT_BAR_DNA        } from '../modules/local/dbcan_plot'
 // new subworkflows
-include { FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS } from '../subworkflows/nf-core/fastq_extract_kraken_krakentools'
-include { FASTQC_TRIMGALORE                } from '../subworkflows/local/fastqc_trimgalore'
-include { BWAMEME_INDEX_MEM                } from '../subworkflows/local/bwameme_index_mem'
-include { CGC_DEPTH                        } from '../subworkflows/local/cgc_depth'
+include { FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS as FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_DNA } from '../subworkflows/nf-core/fastq_extract_kraken_krakentools'
+include { FASTQC_TRIMGALORE                as FASTQC_TRIMGALORE_DNA         } from '../subworkflows/local/fastqc_trimgalore'
 
 //prepare the project parameters and databases
-
-ch_kraken2_db_file = params.kraken_db ? path(params.kraken_db, type: 'dir', checkIfExists: true) : []
-ch_kraken2_tax     = params.kraken_tax ?: []
-ch_dbcan_db        = params.dbcan_db ? path(params.dbcan_db, checkIfExists: true) : []
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -46,172 +32,216 @@ ch_dbcan_db        = params.dbcan_db ? path(params.dbcan_db, checkIfExists: true
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-workflow DBCANMICROBIOME {
 
+workflow DBCANMICROBIOMEASSEMBLYFREE {
     take:
-    ch_samplesheet // channel: samplesheet read in from --input
+        ch_samplesheet
+
     main:
+        ch_versions = Channel.empty()
+        ch_multiqc_files = Channel.empty()
 
-    ch_versions = Channel.empty()
-    ch_multiqc_files = Channel.empty()
-    //
-    // MODULE: Run FastQC_TrimGalore
-    //
+        // DNA channel
+        // Note: For assemfree type, samplesheet format is tuple(meta, fastqs) - only 2 elements
+        ch_samplesheet_dna = ch_samplesheet
+            .map { meta, fastqs ->
+                def fq_list = fastqs ?: []
+                def dna_meta = [ id: meta.id+'_dna', single_end: meta.single_end ]
+                tuple(dna_meta, fq_list)
+            }
+            .filter { meta, fq_list -> fq_list && fq_list.size() > 0 }
 
-    // 1. split channels based on the type of reads
-    ch_samplesheet_pe = ch_samplesheet.filter { meta, reads -> !meta.single_end }
-    ch_samplesheet_se = ch_samplesheet.filter { meta, reads -> meta.single_end }
+        // Download CAZy DIAMOND database for assembly-free analysis
+        // For assembly-free, we only need CAZy.dmnd, so download it directly instead of full dbCAN database
+        DOWNLOAD_CAZY_DMND()
+        ch_cazy_dmnd = DOWNLOAD_CAZY_DMND.out.cazy_dmnd
+        ch_cazyid_subfam_mapping = DOWNLOAD_CAZY_DMND.out.cazyid_subfam_mapping
+        ch_versions = ch_versions.mix(DOWNLOAD_CAZY_DMND.out.versions)
 
-    // 2. pair-end process
-    FASTQC_TRIMGALORE (
-        ch_samplesheet_pe,
-        params.skip_fastqc,
-        params.skip_trimming
-    )
+        // Prepare diamond database channel for DIAMOND_BLASTX
+        // DIAMOND_BLASTX expects tuple(meta, db) where db can be a file or directory
+        ch_diamond_db = ch_cazy_dmnd
+            .map { cazy_dmnd_file ->
+                // Pass the directory containing the .dmnd file
+                // The module script will find the .dmnd file in this directory
+                tuple([ id: 'diamond_db' ], cazy_dmnd_file.parent)
+            }
 
-    ch_multiqc_files = ch_multiqc_files.mix(
-        FASTQC_TRIMGALORE.out.fastqc_zip.map{ it[1][0] }
-    )
-    ch_versions = ch_versions.mix(FASTQC_TRIMGALORE.out.versions)
-    extract_kraken2_reads_pe = FASTQC_TRIMGALORE.out.reads
-    //3. single end process
-    extract_kraken2_reads_se = ch_samplesheet_se
-
-    // 4. combine all reads for the kraken2
-    extract_kraken2_reads = extract_kraken2_reads_pe.mix(extract_kraken2_reads_se)
-
-    //
-    // MODULE: Kraken2 Build Database
-    //
-    if (!params.skip_kraken_extraction) {
-        if (ch_kraken2_db_file.isEmpty()) {
-            KRAKEN2_BUILDSTANDARD (false)
-            ch_db_for_kraken2 = KRAKEN2_BUILDSTANDARD.out.db
-        } else {
-            ch_db_for_kraken2 = ch_kraken2_db_file
+        // Process kraken database
+        if (!params.skip_kraken_extraction) {
+            if (params.kraken_db) {
+                ch_db_for_kraken2 = Channel.fromPath(params.kraken_db, type: 'dir', checkIfExists: true)
+            } else {
+                KRAKEN2_BUILDSTANDARD(false)
+                ch_db_for_kraken2 = KRAKEN2_BUILDSTANDARD.out.db
+            }
         }
-    } else {
-        ch_db_for_kraken2 = ch_kraken2_db_file
-    }
 
-    //subworkflow to extract kraken2 reads
+        // 1. FastQC + TrimGalore
+        FASTQC_TRIMGALORE_DNA (
+            ch_samplesheet_dna,
+            params.skip_fastqc,
+            params.skip_trimming
+        )
 
-    if (!params.skip_kraken_extraction) {
-        // TODO: build db process
-        // Use nf-core subworkflow at https://nf-co.re/subworkflows/fasta_build_add_kraken2/
+        ch_multiqc_files = ch_multiqc_files.mix(
+            FASTQC_TRIMGALORE_DNA.out.fastqc_zip.map{ it[1][0] }
+        )
 
-        FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS (
-                extract_kraken2_reads,
-                ch_db_for_kraken2,
-                params.tax_id
-        ).extract_kraken2_reads.set { extract_kraken2_reads }
+        ch_versions = ch_versions.mix(FASTQC_TRIMGALORE_DNA.out.versions)
+        ch_trimmed_reads_dna = FASTQC_TRIMGALORE_DNA.out.reads
 
-        ch_multiqc_files = ch_multiqc_files.mix(FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS.out.multiqc_files)
-        ch_versions = ch_versions.mix ( FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS.out.versions )
-    }
+        // 2. Kraken2 extraction (optional)
+        if (!params.skip_kraken_extraction) {
+            FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_DNA (
+                    ch_trimmed_reads_dna,
+                    ch_db_for_kraken2,
+                    params.kraken_tax)
 
+            ch_extracted_from_kraken2_reads_dna = FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_DNA.out.extracted_kraken2_reads
 
-    // MODULE: Megahit to assemble metagenomics
+            ch_multiqc_files = ch_multiqc_files.mix(FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_DNA.out.multiqc_files)
+            ch_versions = ch_versions.mix ( FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_DNA.out.versions )
+            ch_assembly_free_input_dna = ch_extracted_from_kraken2_reads_dna
+        } else {
+            // if skip kraken2 extraction, use trimmed reads
+            ch_assembly_free_input_dna = ch_trimmed_reads_dna
+        }
 
+        // 3. Convert FASTQ to FASTA using seqtk seq
+        // Note: ext.args '-A' should be set in modules.config to convert FASTQ to FASTA
+        // TRIMGALORE output format: tuple(meta, path) where path can match multiple files
+        // When path matches multiple files, Nextflow returns them as a list
+        // We need to expand this to separate tuples for R1 and R2 for paired-end reads
+        ch_fasta_for_blastx_dna = ch_assembly_free_input_dna
+            .flatMap { meta, reads_list ->
+                // TRIMGALORE output: reads_list is a list when multiple files match
+                // Convert to list if it's not already a list
+                def reads = reads_list instanceof List ? reads_list : [reads_list]
+                reads = reads.findAll { it != null && it != false }
+                
+                if (reads.size() > 1) {
+                    // Paired-end: process R1 and R2 separately
+                    def r1_meta = meta.clone()
+                    r1_meta.id = "${meta.id}_R1"
+                    def r2_meta = meta.clone()
+                    r2_meta.id = "${meta.id}_R2"
+                    [
+                        tuple(r1_meta, reads[0]),
+                        tuple(r2_meta, reads[1])
+                    ]
+                } else if (reads.size() == 1) {
+                    // Single-end: process once
+                    [tuple(meta, reads[0])]
+                } else {
+                    // No valid reads, return empty list
+                    []
+                }
+            }
 
-    // make sure all reads are the list
-    extract_kraken2_reads_fixed = extract_kraken2_reads.map { meta, reads ->
-        tuple(meta, reads instanceof List ? reads : [reads])
-    }
+        // Convert to FASTA
+        SEQTK_SEQ(ch_fasta_for_blastx_dna)
+        ch_versions = ch_versions.mix(SEQTK_SEQ.out.versions)
+        ch_fasta_dna = SEQTK_SEQ.out.fastx
 
-    // pair-end for MEGAHIT
-    ch_megahit_input = extract_kraken2_reads_fixed
-        .filter { meta, reads -> !meta.single_end && reads.size() == 2 && reads[0] && reads[1] }
-        .map { meta, reads -> tuple(meta, reads[0], reads[1]) }
+        // 4. Diamond blastx: align reads to CAZyme database
+        // For paired-end, we process R1 and R2 separately to get two different blastx results
+        ch_fasta_for_blastx_dna_final = ch_fasta_dna
+        ch_db_for_blastx_dna = ch_diamond_db
 
-    // single-end for FLYE
-    ch_flye_input = extract_kraken2_reads_fixed
-        .filter { meta, reads -> meta.single_end && reads.size() == 1 && reads[0] }
-        .map { meta, reads -> tuple(meta, reads[0]) }
-    ch_flye_mode  = Channel.value(params.flye_mode ?: "--pacbio-hifi")
+        DIAMOND_BLASTX(
+            ch_fasta_for_blastx_dna_final,
+            ch_db_for_blastx_dna,
+            'txt',
+            'qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qcovhsp qlen slen '
+        )
 
-    MEGAHIT ( ch_megahit_input )
-    FLYE ( ch_flye_input, ch_flye_mode )
-    ch_versions = ch_versions.mix ( MEGAHIT.out.versions )
-    ch_megahit_contigs = MEGAHIT.out.contigs
-    ch_flye_contigs = FLYE.out.fasta
+        ch_versions = ch_versions.mix(DIAMOND_BLASTX.out.versions)
+        ch_diamond_results_dna = DIAMOND_BLASTX.out.txt
 
-    // combine all contigs
-    ch_all_contigs = ch_megahit_contigs.mix(ch_flye_contigs)
+        // 5. dbcan_asmfree: calculate abundance (all types in one module)
+        // Prepare reads for dbcan_asmfree (need original reads, not fasta)
+        ch_reads_for_asmfree_dna = ch_assembly_free_input_dna
+            .map { meta, reads_list ->
+                // For paired-end, use first read file (R1) as --raw_reads
+                // reads_list is a list of files for paired-end, or a single file for single-end
+                def reads_file = reads_list instanceof List ? reads_list[0] : reads_list
+                tuple(meta, reads_file)
+            }
 
-    //
-    // MODULE: Pyrodigal to find genes in metagenomics data
-    // Will make it as subworkflow
-    PYRODIGAL ( ch_all_contigs, 'gff' )
-    ch_versions = ch_versions.mix(PYRODIGAL.out.versions)
-    ch_faa = PYRODIGAL.out.faa
-    ch_gff = PYRODIGAL.out.annotations
+        // Group diamond results by sample (for paired-end, we have R1 and R2 results)
+        // Extract base sample ID (remove _R1 or _R2 suffix)
+        ch_diamond_results_grouped = ch_diamond_results_dna
+            .map { meta, diamond_result ->
+                def base_id = meta.id.replaceFirst(/_R[12]$/, '')
+                tuple(base_id, meta, diamond_result)
+            }
+            .groupTuple()
+            .map { base_id, metas, results ->
+                // Determine if paired-end based on number of results
+                def is_paired = results.size() > 1
+                def original_meta = metas[0].clone()
+                original_meta.id = base_id
+                
+                if (is_paired) {
+                    // Paired-end: return tuple with both R1 and R2 results
+                    // Keep base_id as first element for join operation
+                    tuple(base_id, original_meta, results[0], results[1])
+                } else {
+                    // Single-end: return tuple with single result (duplicate for compatibility)
+                    tuple(base_id, original_meta, results[0], results[0])
+                }
+            }
 
-    GUNZIP_FAA (ch_faa)
-    GUNZIP_GFF (ch_gff)
-    ch_gunzip_faa = GUNZIP_FAA.out.gunzip
-    ch_gunzip_gff = GUNZIP_GFF.out.gunzip
+        // Join diamond results with reads
+        ch_reads_for_asmfree_keyed = ch_reads_for_asmfree_dna
+            .map { meta, reads_file ->
+                tuple(meta.id, meta, reads_file)
+            }
 
+        ch_asmfree_input_dna = ch_diamond_results_grouped
+            .join(ch_reads_for_asmfree_keyed, by: 0)
+            .map { key, meta_diamond, diamond_r1, diamond_r2, meta_reads, reads_file ->
+                tuple(meta_diamond, diamond_r1, diamond_r2, meta_reads, reads_file)
+            }
 
-    //
-    // MODULE: run_dbCAN to find CAZymes and CGCs in metagenomics data
-    //Will write it into subworkflow later
-    RUNDBCAN_DATABASE ()
-    if (!ch_dbcan_db.isEmpty()) {
-        ch_dbcan_db = Channel.fromPath(ch_dbcan_db, checkIfExists: true)
-    } else {
-        ch_dbcan_db = RUNDBCAN_DATABASE.out.dbcan_db
-    }
+        // Prepare inputs for dbcan_asmfree
+        // ch_asmfree_input_dna already contains: tuple(meta_diamond, diamond_r1, diamond_r2, meta_reads, reads_file)
+        // Extract diamond and reads channels separately for module inputs
+        ch_diamond_for_asmfree_dna = ch_asmfree_input_dna.map { meta, diamond_r1, diamond_r2, reads_meta, reads_file -> tuple(meta, diamond_r1, diamond_r2) }
+        ch_reads_for_asmfree_dna_final = ch_asmfree_input_dna.map { meta, diamond_r1, diamond_r2, reads_meta, reads_file -> tuple(meta, reads_file) }
+        
+        // Prepare db directory for dbcan_asmfree (contains CAZyID_subfam_mapping.tsv)
+        // Get the parent directory from the mapping file
+        // DOWNLOAD_CAZY_DMND only runs once, so ch_cazyid_subfam_mapping has only one value
+        // Use .first() to convert to value channel
+        ch_db_dir_for_asmfree = ch_cazyid_subfam_mapping.map { it.parent }.first()
+        
+        // Calculate all abundance types (fam, subfam, EC, substrate) in one module
+        // This is similar to RUNDBCAN_UTILS_CAL_ABUND in the assembly-based workflow
+        RUNDBCAN_ASMFREE_CAL_ABUND(
+            ch_diamond_for_asmfree_dna,
+            ch_reads_for_asmfree_dna_final,
+            ch_db_dir_for_asmfree,
+            'FPKM'
+        )
 
-    ch_gunzip_gff_with_type = ch_gunzip_gff.map { meta, gff -> tuple(meta, gff, 'prodigal') }
+        ch_versions = ch_versions.mix(RUNDBCAN_ASMFREE_CAL_ABUND.out.versions)
+        ch_asmfree_abund_dna = RUNDBCAN_ASMFREE_CAL_ABUND.out.abund_dir
 
-    RUNDBCAN_EASYSUBSTRATE (
-        ch_gunzip_faa,
-        ch_gunzip_gff_with_type,
-        ch_dbcan_db
-    )
+        // 6. Plotting (similar to assembly-based workflow)
+        ch_plot_input_dna = ch_asmfree_abund_dna
+            .toList()
+            .map { tuples ->
+                tuple(
+                    tuples*.getAt(0).id,
+                    tuples*.getAt(1)
+                )
+            }
 
-    ch_versions = ch_versions.mix(RUNDBCAN_DATABASE.out.versions)
+        RUNDBCAN_PLOT_BAR_DNA(ch_plot_input_dna)
+        ch_versions = ch_versions.mix(RUNDBCAN_PLOT_BAR_DNA.out.versions)
 
-    //
-    // Read mapping with BWA-MEME
-    BWAMEME_INDEX_MEM (
-        ch_all_contigs,
-        extract_kraken2_reads_fixed,
-    )
-    //
-    ch_bam_bai = BWAMEME_INDEX_MEM.out.ch_bam_bai
-    ch_versions = ch_versions.mix(BWAMEME_INDEX_MEM.out.versions)
-
-
-
-    RUNDBCAN_UTILS_CAL_COVERAGE (
-        ch_gunzip_gff,
-        ch_bam_bai
-    )
-    ch_versions = ch_versions.mix(RUNDBCAN_UTILS_CAL_COVERAGE.out.versions)
-
-
-    CGC_DEPTH(
-        RUNDBCAN_EASYSUBSTRATE.out.dbcan_results,
-        ch_bam_bai
-    )
-
-    RUNDBCAN_UTILS_CAL_ABUND(
-        RUNDBCAN_UTILS_CAL_COVERAGE.out.depth_txt,
-        RUNDBCAN_EASYSUBSTRATE.out.dbcan_results,
-
-    )
-
-    ch_plot_input = RUNDBCAN_UTILS_CAL_ABUND.out.abund_dir
-    .collect()
-    .map { tuples ->
-        def meta_list = tuples.collect { it[0] }
-        def abund_dirs = tuples.collect { it[1] }
-        tuple(meta_list, abund_dirs)
-    }
-
-    RUNDBCAN_PLOT_BAR(ch_plot_input)
     //
     // Collate and save software versions
     //
@@ -222,8 +252,6 @@ workflow DBCANMICROBIOME {
             sort: true,
             newLine: true
         ).set { ch_collated_versions }
-
-
 
     //
     // MODULE: MultiQC
@@ -265,9 +293,9 @@ workflow DBCANMICROBIOME {
         []
     )
 
-    emit:multiqc_report = MULTIQC.out.report.toList() // channel: /path/to/multiqc_report.html
-    versions       = ch_versions                 // channel: [ path(versions.yml) ]
-
+    emit:
+        multiqc_report = MULTIQC.out.report.toList()
+        versions       = ch_versions
 }
 
 /*

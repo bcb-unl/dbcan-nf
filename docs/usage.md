@@ -6,7 +6,13 @@
 
 ## Introduction
 
-<!-- TODO nf-core: Add documentation about anything specific to running your pipeline. For general topics, please point to (and add to) the main nf-core website. -->
+This pipeline supports three analysis modes for CAZyme annotation in microbiome data:
+
+- **Short reads** (`--type shortreads`): Assembly-based analysis for Illumina short-read data using MEGAHIT
+- **Long reads** (`--type longreads`): Assembly-based analysis for PacBio/Nanopore long-read data using Flye
+- **Assembly free** (`--type assemfree`): Direct annotation without assembly using seqtk and DIAMOND blastx
+
+The assembly free mode is particularly useful for large datasets where assembly is computationally expensive or when you want to avoid potential assembly artifacts. It directly converts reads to FASTA format and uses DIAMOND blastx to search against the CAZyme database, followed by abundance calculation using dbcan_asmfree.
 
 ## Samplesheet input
 
