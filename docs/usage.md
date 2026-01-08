@@ -162,6 +162,47 @@ If `-profile` is not specified, the pipeline will run locally and expect all sof
 - `conda`
   - A generic configuration profile to be used with [Conda](https://conda.io/docs/). Please only use Conda as a last resort i.e. when it's not possible to run the pipeline with Docker, Singularity, Podman, Shifter, Charliecloud, or Apptainer.
 
+## Short reads modes: subsample & coassembly
+
+Only relevant when `--type shortreads`.
+
+### Subsample mode
+- Purpose: downsample each sample before assembly to reduce compute and to quickly sanity-check the pipeline.
+- Parameters:
+  - `--subsample`: enable subsampling.
+  - `--subsample_size`: number of reads per file to keep (default `20000000` in config).
+- Behavior:
+  - Applies per-sample before MEGAHIT, using `seqtk sample`.
+  - Mutually exclusive with `--coassembly`.
+- Example:
+```bash
+nextflow run nf-core/dbcanmicrobiome \
+  --type shortreads \
+  --input samplesheet.csv \
+  --outdir results_subsample \
+  --subsample \
+  --subsample_size 5000000 \
+  -profile docker
+```
+
+### Coassembly mode
+- Purpose: co-assemble all short-read samples together to improve contig continuity and shared feature detection.
+- Parameters:
+  - `--coassembly`: enable coassembly across all samples.
+- Requirements & behavior:
+  - Needs at least 2 samples; pipeline will error if fewer.
+  - Combines all reads (paired/single preserved) and runs a single MEGAHIT assembly.
+  - Mutually exclusive with `--subsample`.
+- Example:
+```bash
+nextflow run nf-core/dbcanmicrobiome \
+  --type shortreads \
+  --input samplesheet.csv \
+  --outdir results_coassembly \
+  --coassembly \
+  -profile docker
+```
+
 ### `-resume`
 
 Specify this when restarting a pipeline. Nextflow will use cached results from any pipeline steps where the inputs are the same, continuing from where it got to previously. For input to be considered the same, not only the names must be identical but the files' contents as well. For more info about this parameter, see [this blog post](https://www.nextflow.io/blog/2019/demystifying-nextflow-resume.html).
