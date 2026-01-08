@@ -245,7 +245,15 @@ workflow DBCANMICROBIOMEASSEMBLYFREE {
     //
     // Collate and save software versions
     //
-    softwareVersionsToYAML(ch_versions)
+    // softwareVersionsToYAML only accepts paths; convert ch_versions to paths and filter empty
+    ch_versions_paths = ch_versions
+        .map { v ->
+            v instanceof List && v.size() >= 2 ? v[1] : v
+        }
+        .filter { it != null }
+        .map { file(it, checkIfExists: true) }
+
+    softwareVersionsToYAML(ch_versions_paths)
         .collectFile(
             storeDir: "${params.outdir}/pipeline_info",
             name: 'nf_core_'  +  'dbcanmicrobiome_software_'  + 'mqc_'  + 'versions.yml',

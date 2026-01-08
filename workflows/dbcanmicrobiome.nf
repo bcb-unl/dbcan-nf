@@ -69,18 +69,18 @@ workflow DBCANMICROBIOME {
             .filter { meta, fq_list -> fq_list && fq_list.size() > 0 }
 
         // RNA channel, only use RNA samples when not subsample or coassembly
-        if (!params.subsample && !params.coassembly)
-        {
-        ch_samplesheet_rna = ch_samplesheet
-            .map { meta, fastqs, transcriptomes ->
-                def t_list = transcriptomes ?: []
-                def rna_meta = [ id: meta.id+'_rna', single_end: meta.single_end ]
-                tuple(rna_meta, t_list)
-            }
-            .filter { meta, t_list -> t_list && t_list.size() > 0 }
-        }
-        else
-        {
+        // Store flag to avoid repeated condition checks
+        def use_rna = !params.subsample && !params.coassembly
+        
+        if (use_rna) {
+            ch_samplesheet_rna = ch_samplesheet
+                .map { meta, fastqs, transcriptomes ->
+                    def t_list = transcriptomes ?: []
+                    def rna_meta = [ id: meta.id+'_rna', single_end: meta.single_end ]
+                    tuple(rna_meta, t_list)
+                }
+                .filter { meta, t_list -> t_list && t_list.size() > 0 }
+        } else {
             ch_samplesheet_rna = Channel.empty()
         }
 
@@ -118,8 +118,8 @@ workflow DBCANMICROBIOME {
             params.skip_trimming
         )
 
-        // 在使用 RNA channels 之前添加检查
-        if (!params.subsample && !params.coassembly) {
+        // Process RNA channels if enabled
+        if (use_rna) {
             FASTQC_TRIMGALORE_RNA (
                 ch_samplesheet_rna,
                 params.skip_fastqc,
@@ -351,7 +351,7 @@ workflow DBCANMICROBIOME {
         // Prepare channels for RNA mapping (reuse DNA index prefix)
         //
 
-        // 基于样本名的 join key（去掉 _rna/_dna）
+        // Create join key based on sample name (remove _rna/_dna suffix)
         ch_bwameme_input_rna_keyed = ch_bwameme_input_rna.map { meta, r1, r2 ->
             def key = meta.id.replaceFirst(/_rna$/, '')
             tuple(key, meta, r1, r2)
@@ -367,28 +367,28 @@ workflow DBCANMICROBIOME {
             tuple(key, meta, fasta)
         }
 
-        // join RNA reads with DNA index/contigs using基准 key
+        // Join RNA reads with DNA index/contigs using base key
         ch_bwa_mem_input_rna = ch_bwameme_input_rna_keyed
             .join(ch_index_dna_keyed, by: 0)
             .join(ch_contigs_dna_keyed, by: 0)
             .map { key, meta_rna, r1, r2, meta_idx, idx, meta_ctg, fasta ->
-                // 让 BWA 使用 DNA meta（含 *_dna 前缀），以匹配已生成的索引前缀
+                // Use DNA meta (with *_dna prefix) for BWA to match the generated index prefix
                 tuple(meta_idx, r1, r2, idx, fasta)
             }
 
-        // 分拆为子工作流输入
+        // Split into subworkflow inputs
         ch_fastq_rna       = ch_bwa_mem_input_rna.map { t -> tuple(t[0], t[1], t[2]) }
         ch_index_rna_final = ch_bwa_mem_input_rna.map { t -> tuple(t[0], t[3]) }
         ch_genome_fna_rna  = ch_bwa_mem_input_rna.map { t -> tuple(t[0], t[4]) }
 
-        // 调用 RNA 子工作流（内部会用 *_dna 前缀的索引）
+        // Call RNA subworkflow (will use *_dna prefix index internally)
         BWA_INDEX_MEM_RNA (
             ch_index_rna_final,
             ch_genome_fna_rna,
             ch_fastq_rna
         )
 
-        // 将输出 meta 从 *_dna 改回 *_rna，便于后续 join
+        // Change output meta from *_dna back to *_rna for subsequent join
         ch_bam_bai_rna = BWA_INDEX_MEM_RNA.out.ch_bam_bai.map { meta, bam, bai ->
             def new_meta = meta.clone()
             new_meta.id = new_meta.id.replaceFirst(/_dna$/, '_rna')
@@ -397,7 +397,6 @@ workflow DBCANMICROBIOME {
 
         //
         ch_bam_bai_dna = BWA_INDEX_MEM_DNA.out.ch_bam_bai
-        // ch_bam_bai_rna = BWA_INDEX_MEM_RNA.out.ch_bam_bai   // 删除这行覆盖
 
         ch_gff_bam_bai_dna = ch_gunzip_gff
             .join(ch_bam_bai_dna, by: 0)
@@ -484,7 +483,15 @@ workflow DBCANMICROBIOME {
     //
     // Collate and save software versions
     //
-    softwareVersionsToYAML(ch_versions)
+    // softwareVersionsToYAML only accepts paths; convert ch_versions to paths and filter empty
+    ch_versions_paths = ch_versions
+        .map { v ->
+            v instanceof List && v.size() >= 2 ? v[1] : v
+        }
+        .filter { it != null }
+        .map { file(it, checkIfExists: true) }
+
+    softwareVersionsToYAML(ch_versions_paths)
         .collectFile(
             storeDir: "${params.outdir}/pipeline_info",
             name: 'nf_core_'  +  'dbcanmicrobiome_software_'  + 'mqc_'  + 'versions.yml',

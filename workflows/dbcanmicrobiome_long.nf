@@ -66,7 +66,7 @@ workflow DBCANMICROBIOMELONG {
             }
             .filter { meta, fq_list -> fq_list && fq_list.size() > 0 }
 
-        // RNA channel - 只在提供了 transcriptomes 时创建通道,否则为空
+        // RNA channel - only create channel when transcriptomes are provided, otherwise empty
         ch_samplesheet_rna = ch_samplesheet
             .map { meta, fastqs, transcriptomes ->
                 def t_list = transcriptomes ?: []
@@ -107,10 +107,10 @@ workflow DBCANMICROBIOMELONG {
 
 
         // 2. pair-end process
-        // DNA: long reads 不做 QC/trim，直接透传
+        // DNA: long reads skip QC/trim, pass through directly
         ch_trimmed_reads_dna = ch_samplesheet_dna
 
-        // RNA：仅当存在 RNA 样本时再做 QC/trim
+        // RNA: only perform QC/trim when RNA samples exist
         FASTQC_TRIMGALORE_RNA (
             ch_samplesheet_rna,
             params.skip_fastqc,
@@ -140,7 +140,7 @@ workflow DBCANMICROBIOMELONG {
                 }
         }
 
-        // FLYE 仅接受 (meta, reads)；长读取第一个文件
+        // FLYE only accepts (meta, reads); use first file for long reads
         ch_flye_input_dna = ch_trimmed_reads_dna
             .map { meta, reads_list ->
                 tuple(meta, reads_list[0])
@@ -238,7 +238,7 @@ workflow DBCANMICROBIOMELONG {
             .map { meta, read1, index_dir, fasta ->
                 tuple(meta, read1, index_dir, fasta)
             }
-        // Long reads 只有单个文件,直接使用
+        // Long reads have only a single file, use directly
             ch_minimap2_input = ch_bwameme_input_dna
                 .join(ch_flye_contigs_dna, by: 0)
                 .map { meta, reads, fasta ->
@@ -259,15 +259,15 @@ workflow DBCANMICROBIOMELONG {
 
         ch_versions = ch_versions.mix(MINIMAP2_ALIGN.out.versions)
 
-        // DNA 的 BAM/BAI
+        // DNA BAM/BAI
         ch_bam_bai_dna = MINIMAP2_ALIGN.out.bam
             .join(MINIMAP2_ALIGN.out.index, by: 0)
             .map { meta, bam, bai ->
                 tuple(meta, bam, bai)
             }
 
-        // 为 RNA 准备 BWA 输入 - 使用 DNA 的索引（因为它们使用相同的 contigs）
-        // 基于样本名的 join key（去掉 _rna/_dna）
+        // Prepare BWA input for RNA - use DNA index (because they use the same contigs)
+        // Create join key based on sample name (remove _rna/_dna suffix)
         ch_bwameme_input_rna_keyed = ch_bwameme_input_rna.map { meta, r1, r2 ->
             def key = meta.id.replaceFirst(/_rna$/, '')
             tuple(key, meta, r1, r2)
@@ -288,7 +288,7 @@ workflow DBCANMICROBIOMELONG {
             .join(ch_index_dna_keyed, by: 0, remainder: false)
             .join(ch_contigs_dna_keyed, by: 0, remainder: false)
             .map { key, meta_rna, r1, r2, meta_idx, idx, meta_ctg, fasta ->
-                // 让 BWA 使用 DNA meta（含 *_dna 前缀），以匹配已生成的索引前缀
+                // Use DNA meta (with *_dna prefix) for BWA to match the generated index prefix
                 tuple(meta_idx, r1, r2, idx, fasta)
             }
 
@@ -306,7 +306,7 @@ workflow DBCANMICROBIOMELONG {
             ch_fastq_rna
         )
 
-        // 将输出 meta 从 *_dna 改回 *_rna，便于后续 join
+        // Change output meta from *_dna back to *_rna for subsequent join
         ch_bam_bai_rna = BWA_INDEX_MEM_RNA.out.ch_bam_bai.map { meta, bam, bai ->
             def new_meta = meta.clone()
             new_meta.id = new_meta.id.replaceFirst(/_dna$/, '_rna')
@@ -398,8 +398,8 @@ workflow DBCANMICROBIOMELONG {
     //
     // Collate and save software versions
     //
-    // softwareVersionsToYAML 仅接受路径；将 ch_versions 统一成路径并过滤空
-    def ch_versions_paths = ch_versions
+    // softwareVersionsToYAML only accepts paths; convert ch_versions to paths and filter empty
+    ch_versions_paths = ch_versions
         .map { v ->
             v instanceof List && v.size() >= 2 ? v[1] : v
         }
