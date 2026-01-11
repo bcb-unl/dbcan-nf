@@ -37,7 +37,7 @@ process RUNDBCAN_ASMFREE_CAL_ABUND {
     cd ${prefix}
 
     # Step 1: Calculate family abundance
-    dbcan_asmfree diamond_fam_abund \\
+    diamond_unassembly.py diamond_fam_abund \\
         ${paf_args} \\
         --raw_reads ../${reads} \\
         -n ${normalize_val} \\
@@ -45,7 +45,7 @@ process RUNDBCAN_ASMFREE_CAL_ABUND {
         ${args}
 
     # Step 2: Calculate subfamily abundance
-    dbcan_asmfree diamond_subfam_abund \\
+    diamond_unassembly.py diamond_subfam_abund \\
         ${paf_args} \\
         --raw_reads ../${reads} \\
         -n ${normalize_val} \\
@@ -53,13 +53,13 @@ process RUNDBCAN_ASMFREE_CAL_ABUND {
         ${args}
 
     # Step 3: Calculate EC abundance (uses subfam_abund output)
-    dbcan_asmfree diamond_EC_abund \\
+    diamond_unassembly.py diamond_EC_abund \\
         -i subfam_abund.out \\
         -o EC_abund.out \\
         ${args}
 
     # Step 4: Calculate substrate abundance (uses subfam_abund output)
-    dbcan_asmfree diamond_substrate_abund \\
+    diamond_unassembly.py diamond_substrate_abund \\
         -i subfam_abund.out \\
         -o substrate_abund.out \\
         ${args}
