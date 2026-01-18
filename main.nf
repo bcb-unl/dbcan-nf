@@ -1,11 +1,9 @@
 #!/usr/bin/env nextflow
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    nf-core/dbcanmicrobiome
+    dbcan-nf
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Github : https://github.com/nf-core/dbcanmicrobiome
-    Website: https://nf-co.re/dbcanmicrobiome
-    Slack  : https://nfcore.slack.com/channels/dbcanmicrobiome
+    Github : https://github.com/bcb-unl/dbcan-nf
 ----------------------------------------------------------------------------------------
 */
 

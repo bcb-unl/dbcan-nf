@@ -1,5 +1,5 @@
 //
-// Subworkflow with functionality specific to the nf-core/dbcanmicrobiome pipeline
+// Subworkflow with functionality specific to the dbcan-nf pipeline
 //
 
 /*

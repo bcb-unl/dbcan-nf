@@ -10,8 +10,8 @@ lint:
     - conf/igenomes_ignored.config
 
 template:
-  org: nf-core
-  name: dbcanmicrobiome
+  org: bcb-unl
+  name: dbcan-nf
   description: Automatic and standard workflow for CAZyme and CGC analysis including
     abundance andvisulization in microbiome data
   author: Xinpeng Zhang; Haidong Yi; Jinfang Zheng; Yanbin Yin

@@ -1,6 +1,6 @@
 {
-    "name": "nf-core/dbcanmicrobiome",
-    "homePage": "https://github.com/nf-core/dbcanmicrobiome",
+    "name": "dbcan-nf",
+    "homePage": "https://github.com/bcb-unl/dbcan-nf",
     "repos": {
         "https://github.com/nf-core/modules.git": {
             "modules": {
