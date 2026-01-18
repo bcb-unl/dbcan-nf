@@ -17,7 +17,8 @@ process RUNDBCAN_DATABASE {
     def args   = task.ext.args ?: ''
     """
     run_dbcan database \\
-        --db_dir dbcan_db
+        --db_dir dbcan_db \\
+        ${args}
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

@@ -33,8 +33,11 @@ workflow CGC_DEPTH_PLOT {
         //ch_cgc_regions.view()
         //ch_bam_bai.view()
         // combine to (meta, cgcid, region, bam, bai)
+        // Use meta.id as combine key to avoid meta object mismatch issues
         ch_cgc_depth_input = ch_cgc_regions
-            .combine(ch_bam_bai, by:0) //
+            .map { meta, cgcid, region -> tuple(meta.id, meta, cgcid, region) }
+            .combine(ch_bam_bai.map { meta, bam, bai -> tuple(meta.id, meta, bam, bai) }, by: 0)
+            .map { key, meta1, cgcid, region, meta2, bam, bai -> tuple(meta1, cgcid, region, bam, bai) }
 
         //ch_cgc_depth_input.view()
 
@@ -47,11 +50,13 @@ workflow CGC_DEPTH_PLOT {
         ch_readscount = SAMTOOLS_DEPTH.out.tsv
         .filter { meta, tsv -> tsv.size() > 0 } // filter out empty results
 
+        // Use meta.id as combine key to avoid meta object mismatch issues
         ch_plot_input = ch_readscount
-           .combine(dbcan_folder, by: 0) // connect with dbcan results, tuple(meta, cgcid, tsv_path) + tuple(meta, dbcan_path)
-            .map {meta, readscount, dbcan_results  ->
-                def cgc_id        = readscount.getBaseName().replaceAll('-', /\|/) // get cgcid from tsv filename
-                tuple(meta, dbcan_results, cgc_id, readscount)
+            .map { meta, readscount -> tuple(meta.id, meta, readscount) }
+            .combine(dbcan_folder.map { meta, dbcan_results -> tuple(meta.id, meta, dbcan_results) }, by: 0)
+            .map { key, meta1, readscount, meta2, dbcan_results ->
+                def cgc_id = readscount.getBaseName().replaceAll('-', /\|/) // get cgcid from tsv filename
+                tuple(meta1, dbcan_results, cgc_id, readscount)
             }
         //ch_plot_input.view()
 

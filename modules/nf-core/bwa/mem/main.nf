@@ -35,13 +35,24 @@ process BWA_MEM {
                     "bam"
     def reference = fasta && extension=="cram"  ? "--reference ${fasta}" : ""
     if (!fasta && extension=="cram") error "Fasta reference is required for CRAM output"
+    
+    // In coassembly mode, create symbolic link from sample index dir to coassembly index dir
+    def index_prefix = meta.coassembly_index_id ? meta.coassembly_index_id : meta.id
+    def index_setup = meta.coassembly_index_id ? """
+    # Create symbolic link from sample index dir to coassembly index dir
+    if [ ! -d "bwa_${meta.id}" ] && [ -d "bwa_${index_prefix}" ]; then
+        ln -s bwa_${index_prefix} bwa_${meta.id}
+    fi
+    """ : ""
+    
     """
+    ${index_setup}
     INDEX=`find -L ./ -name "*.amb" | sed 's/\\.amb\$//'`
 
     bwa mem \\
         $args \\
         -t $task.cpus \\
-        bwa_${meta.id}/bwa_${meta.id} \\
+        bwa_${meta.id}/bwa_${index_prefix} \\
         $read1 $read2 | samtools $samtools_command $args2 ${reference} --threads $task.cpus -o ${prefix}.${extension} -
 
     cat <<-END_VERSIONS > versions.yml

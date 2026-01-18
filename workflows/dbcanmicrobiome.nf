@@ -219,6 +219,9 @@ workflow DBCANMICROBIOME {
         // Input: ch_megahit_input_dna (tuple(meta, read1, read2))
         // Output: ch_coassembly_input (tuple(meta, all_read1, all_read2 OR null))
 
+        // Save original samples for later read mapping
+        ch_original_samples_dna = ch_megahit_input_dna
+
         // [meta, r1, r2, meta, r1, r2, ...]
         ch_coassembly_input_dna = ch_megahit_input_dna
             .collect()
@@ -246,6 +249,8 @@ workflow DBCANMICROBIOME {
     } else {
         // Use original reads
         ch_megahit_input_final_dna = ch_megahit_input_dna
+        // For non-coassembly mode, set ch_original_samples_dna to same as input
+        ch_original_samples_dna = ch_megahit_input_dna
     }
 
         // pair-end for MEGAHIT
@@ -270,6 +275,69 @@ workflow DBCANMICROBIOME {
         ch_gunzip_faa = GUNZIP_FAA.out.gunzip
         ch_gunzip_gff = GUNZIP_GFF.out.gunzip
         ch_versions = ch_versions.mix(GUNZIP_FAA.out.versions)
+        
+        // Save original coassembly gff and faa for RUNDBCAN_EASYSUBSTRATE in coassembly mode
+        if (params.coassembly) {
+            ch_gunzip_gff_coassembly = ch_gunzip_gff
+            ch_gunzip_faa_coassembly = ch_gunzip_faa
+        } else {
+            ch_gunzip_gff_coassembly = ch_gunzip_gff
+            ch_gunzip_faa_coassembly = ch_gunzip_faa
+        }
+
+        //
+        // MODULE: run_dbCAN to find CAZymes and CGCs in metagenomics data
+        //Will write it into subworkflow later
+        // In coassembly mode, run on coassembly results first, then replicate to samples
+
+        ch_gunzip_gff_with_type = ch_gunzip_gff_coassembly.map { meta, gff -> tuple(meta, gff, 'prodigal') }
+
+        RUNDBCAN_EASYSUBSTRATE (
+            ch_gunzip_faa_coassembly,
+            ch_gunzip_gff_with_type,
+            ch_dbcan_db_final
+        )
+
+        ch_versions = ch_versions.mix(RUNDBCAN_EASYSUBSTRATE.out.versions)
+        ch_dbcan_results = RUNDBCAN_EASYSUBSTRATE.out.dbcan_results
+        
+        // In coassembly mode, replicate coassembly results to each original sample
+        if (params.coassembly) {
+            // In coassembly mode, there should be only one dbcan result (from coassembly)
+            // Use combine (not cross) to replicate single result to each original sample
+            ch_dbcan_results = ch_dbcan_results
+                .combine(ch_original_samples_dna.map { meta, r1, r2 -> meta })
+                .map { coassembly_meta, dbcan_results, original_meta ->
+                    // Use original sample meta but keep _dna suffix
+                    def new_meta = original_meta.clone()
+                    if (!new_meta.id.endsWith('_dna')) {
+                        new_meta.id = new_meta.id + '_dna'
+                    }
+                    tuple(new_meta, dbcan_results)
+                }
+            
+            // Also replicate gff and faa to each original sample for downstream processing
+            ch_gunzip_gff = ch_gunzip_gff
+                .combine(ch_original_samples_dna.map { meta, r1, r2 -> meta })
+                .map { coassembly_meta, gff, original_meta ->
+                    def new_meta = original_meta.clone()
+                    if (!new_meta.id.endsWith('_dna')) {
+                        new_meta.id = new_meta.id + '_dna'
+                    }
+                    tuple(new_meta, gff)
+                }
+            
+            ch_gunzip_faa = ch_gunzip_faa
+                .combine(ch_original_samples_dna.map { meta, r1, r2 -> meta })
+                .map { coassembly_meta, faa, original_meta ->
+                    def new_meta = original_meta.clone()
+                    if (!new_meta.id.endsWith('_dna')) {
+                        new_meta.id = new_meta.id + '_dna'
+                    }
+                    tuple(new_meta, faa)
+                }
+        }
+        
         ch_gunzip_faa_rna = ch_gunzip_faa
             .map { meta, faa ->
                 def new_meta = meta.clone()
@@ -287,22 +355,8 @@ workflow DBCANMICROBIOME {
                 }
                 tuple(new_meta, gff)
             }
-
-        //
-        // MODULE: run_dbCAN to find CAZymes and CGCs in metagenomics data
-        //Will write it into subworkflow later
-
-        ch_gunzip_gff_with_type = ch_gunzip_gff.map { meta, gff -> tuple(meta, gff, 'prodigal') }
-
-        RUNDBCAN_EASYSUBSTRATE (
-            ch_gunzip_faa,
-            ch_gunzip_gff_with_type,
-            ch_dbcan_db_final
-        )
-
-        ch_versions = ch_versions.mix(RUNDBCAN_EASYSUBSTRATE.out.versions)
-        ch_dbcan_results = RUNDBCAN_EASYSUBSTRATE.out.dbcan_results
-        ch_dbcan_results_rna = RUNDBCAN_EASYSUBSTRATE.out.dbcan_results
+        
+        ch_dbcan_results_rna = ch_dbcan_results
             .map { meta, dbcan_results ->
                 def new_meta = meta.clone()
                 if (new_meta.id.endsWith('_dna')) {
@@ -312,34 +366,98 @@ workflow DBCANMICROBIOME {
             }
         //ch_megahit_input_final_dna.view()
 
-        ch_bwameme_input_dna = ch_megahit_input_final_dna
+        // In coassembly mode, use original samples for read mapping
+        // Ensure meta.id has _dna suffix for join operations
+        if (params.coassembly) {
+            ch_bwameme_input_dna = ch_original_samples_dna.map { meta, r1, r2 ->
+                def new_meta = meta.clone()
+                if (!new_meta.id.endsWith('_dna')) {
+                    new_meta.id = new_meta.id + '_dna'
+                }
+                tuple(new_meta, r1, r2)
+            }
+        } else {
+            ch_bwameme_input_dna = ch_megahit_input_final_dna
+        }
         //ch_bwameme_input_dna.view()
         ch_bwameme_input_rna = ch_extracted_from_kraken2_reads_rna
         //ch_bwameme_input_rna.view()
 
         //
-        BWA_INDEX(
-            ch_megahit_contigs_dna
-        )
-
-        ch_index_dna = BWA_INDEX.out.index
+        // In coassembly mode, create index once using coassembly contigs, then replicate to each sample
+        // For non-coassembly, use contigs directly
+        if (params.coassembly) {
+            // In coassembly mode, there should be only one contig set (from coassembly)
+            // Create index once for coassembly contigs
+            BWA_INDEX(ch_megahit_contigs_dna)
+            
+            // In coassembly mode, replicate index to each sample with sample meta.id
+            // BWA_MEM uses meta.id to find index directory (bwa_${meta.id}), so we need
+            // to use sample meta.id for all channels to match, but the actual index
+            // directory is from coassembly. We'll create symbolic links in the process.
+            ch_index_dna_coassembly = BWA_INDEX.out.index
+            
+            // Use combine (not cross) to replicate single coassembly result to each original sample
+            // combine creates all combinations, cross requires matching keys
+            ch_index_dna = ch_index_dna_coassembly
+                .combine(ch_original_samples_dna.map { meta, r1, r2 -> meta })
+                .map { coassembly_meta, index_dir, original_meta ->
+                    // Use sample meta for join and index lookup
+                    def sample_meta = original_meta.clone()
+                    if (!sample_meta.id.endsWith('_dna')) {
+                        sample_meta.id = sample_meta.id + '_dna'
+                    }
+                    // Store coassembly meta.id in a custom field for later use
+                    sample_meta.coassembly_index_id = coassembly_meta.id
+                    tuple(sample_meta, index_dir)
+                }
+            
+            // Replicate contigs to each original sample for join operation
+            ch_megahit_contigs_dna_for_join = ch_megahit_contigs_dna
+                .combine(ch_original_samples_dna.map { meta, r1, r2 -> meta })
+                .map { contigs_meta, contigs, original_meta ->
+                    def new_meta = original_meta.clone()
+                    if (!new_meta.id.endsWith('_dna')) {
+                        new_meta.id = new_meta.id + '_dna'
+                    }
+                    tuple(new_meta, contigs)
+                }
+        } else {
+            BWA_INDEX(ch_megahit_contigs_dna)
+            ch_index_dna = BWA_INDEX.out.index
+            ch_megahit_contigs_dna_for_join = ch_megahit_contigs_dna
+        }
 
         ch_versions = ch_versions.mix(BWA_INDEX.out.versions)
 
         //ch_bwameme_input_dna.view()
         //
         // Read mapping with BWA-MEME
-        ch_bwa_mem_input = ch_bwameme_input_dna
-            .join(ch_index_dna)
-            .join(ch_megahit_contigs_dna)
-            .map { meta, read1, read2, index_dir, fasta ->
-                tuple(meta, read1, read2, index_dir, fasta)
+        // Use meta.id as join key to ensure proper matching
+        ch_bwameme_input_dna_keyed = ch_bwameme_input_dna.map { meta, r1, r2 ->
+            tuple(meta.id, meta, r1, r2)
+        }
+        
+        // All channels must use the same meta.id for matching in BWA_INDEX_MEM
+        ch_index_dna_keyed_for_join = ch_index_dna.map { meta, idx ->
+            tuple(meta.id, meta, idx)
+        }
+        
+        ch_contigs_dna_keyed_for_join = ch_megahit_contigs_dna_for_join.map { meta, fasta ->
+            tuple(meta.id, meta, fasta)
+        }
+        
+        ch_bwa_mem_input = ch_bwameme_input_dna_keyed
+            .join(ch_index_dna_keyed_for_join, by: 0)
+            .join(ch_contigs_dna_keyed_for_join, by: 0)
+            .map { key, meta, r1, r2, meta_idx, idx, meta_ctg, fasta ->
+                tuple(meta, r1, r2, meta_idx, idx, fasta)
             }
 
 
         ch_fastq = ch_bwa_mem_input.map { t -> tuple(t[0], t[1], t[2]) } // (meta, read1, read2)
-        ch_index = ch_bwa_mem_input.map { t -> tuple(t[0], t[3]) }      // (meta, index)
-        ch_genome_fna = ch_bwa_mem_input.map { t -> tuple(t[0], t[4]) } // (meta, fasta)
+        ch_index = ch_bwa_mem_input.map { t -> tuple(t[3], t[4]) }      // (meta, index) - meta.id matches sample, but index dir is coassembly
+        ch_genome_fna = ch_bwa_mem_input.map { t -> tuple(t[0], t[5]) } // (meta, fasta)
 
         BWA_INDEX_MEM_DNA(
             ch_index,
@@ -362,7 +480,9 @@ workflow DBCANMICROBIOME {
             tuple(key, meta, idx)
         }
 
-        ch_contigs_dna_keyed = ch_megahit_contigs_dna.map { meta, fasta ->
+        // In coassembly mode, use ch_megahit_contigs_dna_for_join which has been replicated to each sample
+        // In non-coassembly mode, use ch_megahit_contigs_dna directly
+        ch_contigs_dna_keyed = ch_megahit_contigs_dna_for_join.map { meta, fasta ->
             def key = meta.id.replaceFirst(/_dna$/, '')
             tuple(key, meta, fasta)
         }
@@ -398,16 +518,19 @@ workflow DBCANMICROBIOME {
         //
         ch_bam_bai_dna = BWA_INDEX_MEM_DNA.out.ch_bam_bai
 
+        // Use meta.id as join key to avoid meta object mismatch issues
         ch_gff_bam_bai_dna = ch_gunzip_gff
-            .join(ch_bam_bai_dna, by: 0)
-            .map { meta, gff, bam, bai ->
-                tuple(meta, gff, bam, bai)
+            .map { meta, gff -> tuple(meta.id, meta, gff) }
+            .join(ch_bam_bai_dna.map { meta, bam, bai -> tuple(meta.id, meta, bam, bai) }, by: 0)
+            .map { key, meta_gff, gff, meta_bam, bam, bai ->
+                tuple(meta_gff, gff, bam, bai)
             }
 
         ch_gff_bam_bai_rna = ch_gunzip_gff_rna
-            .join(ch_bam_bai_rna, by: 0)
-            .map { meta, gff, bam, bai ->
-                tuple(meta, gff, bam, bai)
+            .map { meta, gff -> tuple(meta.id, meta, gff) }
+            .join(ch_bam_bai_rna.map { meta, bam, bai -> tuple(meta.id, meta, bam, bai) }, by: 0)
+            .map { key, meta_gff, gff, meta_bam, bam, bai ->
+                tuple(meta_gff, gff, bam, bai)
             }
 
         RUNDBCAN_UTILS_CAL_COVERAGE_DNA(
@@ -439,13 +562,16 @@ workflow DBCANMICROBIOME {
         ch_cgc_depth_dna = CGC_DEPTH_PLOT_DNA.out.tsv
         ch_cgc_depth_rna = CGC_DEPTH_PLOT_RNA.out.tsv
 
+        // Use meta.id as join key to avoid meta object mismatch issues
         ch_abund_input_dna = ch_coverage_dna
-            .join(ch_dbcan_results, by: 0)
-            .map { meta, cgc_depth, dbcan_results -> tuple(meta, cgc_depth, dbcan_results) }
+            .map { meta, depth -> tuple(meta.id, meta, depth) }
+            .join(ch_dbcan_results.map { meta, results -> tuple(meta.id, meta, results) }, by: 0)
+            .map { key, meta1, depth, meta2, results -> tuple(meta1, depth, results) }
 
         ch_abund_input_rna = ch_coverage_rna
-            .join(ch_dbcan_results_rna, by: 0)
-            .map { meta, cgc_depth, dbcan_results -> tuple(meta, cgc_depth, dbcan_results) }
+            .map { meta, depth -> tuple(meta.id, meta, depth) }
+            .join(ch_dbcan_results_rna.map { meta, results -> tuple(meta.id, meta, results) }, by: 0)
+            .map { key, meta1, depth, meta2, results -> tuple(meta1, depth, results) }
 
 
         RUNDBCAN_UTILS_CAL_ABUND_DNA(
