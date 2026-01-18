@@ -10,9 +10,12 @@
 [![run with docker](https://img.shields.io/badge/run%20with-docker-0db7ed?labelColor=000000&logo=docker)](https://www.docker.com/)
 [![run with singularity](https://img.shields.io/badge/run%20with-singularity-1d355c.svg?labelColor=000000)](https://sylabs.io/docs/)
 
+
 ## Introduction
 
 **dbcan-nf** is a bioinformatics pipeline for carbohydrate-active enzyme (CAZyme) annotation and analysis in microbiome data. The pipeline implements the protocol described in "Carbohydrate-active enzyme annotation in microbiomes using dbCAN" (bioRxiv) and supports three analysis modes:
+
+> 📖 **Full Documentation**: Complete documentation with detailed guides, parameter references, and example results is available at [run-dbcan.readthedocs.io](https://run-dbcan.readthedocs.io/en/latest/nextflow/index.html).
 
 - **Short reads**: Assembly-based analysis using MEGAHIT for short-read metagenomic data
 - **Long reads**: Assembly-based analysis using Flye for long-read metagenomic data  
@@ -34,6 +37,8 @@ The pipeline is built using [Nextflow](https://www.nextflow.io/) and processes d
 
 > [!NOTE]
 > If you are new to Nextflow, please refer to the [Nextflow documentation](https://www.nextflow.io/docs/latest/getstarted.html) on how to set-up Nextflow. Make sure to test your setup with `-profile test` before running the workflow on actual data.
+
+> 📚 **Comprehensive Documentation**: For detailed usage instructions, parameter descriptions, analysis modes, and example results, please visit the [dbcan-nf documentation](https://run-dbcan.readthedocs.io/en/latest/nextflow/index.html) on ReadTheDocs.
 
 ### Installation
 
