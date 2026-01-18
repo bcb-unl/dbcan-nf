@@ -1,7 +1,7 @@
 <h1>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/nf-core-dbcanmicrobiome_logo_dark.png">
-    <img alt="dbcanmicrobiome" src="docs/images/nf-core-dbcanmicrobiome_logo_light.png">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/nf-core-dbcan-nf_logo_dark.png">
+    <img alt="dbcan-nf" src="docs/images/nf-core-dbcan-nf_logo_light.png">
   </picture>
 </h1>
 
@@ -12,7 +12,7 @@
 
 ## Introduction
 
-**dbcanmicrobiome** is a bioinformatics pipeline for carbohydrate-active enzyme (CAZyme) annotation and analysis in microbiome data. The pipeline implements the protocol described in "Carbohydrate-active enzyme annotation in microbiomes using dbCAN" (bioRxiv) and supports three analysis modes:
+**dbcan-nf** is a bioinformatics pipeline for carbohydrate-active enzyme (CAZyme) annotation and analysis in microbiome data. The pipeline implements the protocol described in "Carbohydrate-active enzyme annotation in microbiomes using dbCAN" (bioRxiv) and supports three analysis modes:
 
 - **Short reads**: Assembly-based analysis using MEGAHIT for short-read metagenomic data
 - **Long reads**: Assembly-based analysis using Flye for long-read metagenomic data  
@@ -75,7 +75,7 @@ For more details about the output files and reports, please refer to the output 
 
 ## Credits
 
-dbcanmicrobiome was originally written by Xinpeng Zhang; Haidong Yi; Jinfang Zheng; Yanbin Yin.
+dbcan-nf was originally written by Xinpeng Zhang; Haidong Yi; Jinfang Zheng; Yanbin Yin.
 
 We thank the following people for their extensive assistance in the development of this pipeline:
 
@@ -94,7 +94,7 @@ For further information or help, please open an issue on the GitHub repository.
 ## Citations
 
 <!-- TODO: Add citation for pipeline after first release. Uncomment lines below and update Zenodo doi. -->
-<!-- If you use dbcanmicrobiome for your analysis, please cite it using the following doi: [10.5281/zenodo.XXXXXX](https://doi.org/10.5281/zenodo.XXXXXX) -->
+<!-- If you use dbcan-nf for your analysis, please cite it using the following doi: [10.5281/zenodo.XXXXXX](https://doi.org/10.5281/zenodo.XXXXXX) -->
 
 <!-- TODO: Add bibliography of tools and data used in your pipeline -->
 
