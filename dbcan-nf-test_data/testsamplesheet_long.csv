@@ -1,0 +1,2 @@
+sample,fastq_1,transcriptome_1,transcriptome_2
+test_hifi,/dbcan-nf/dbcan-nf-test_data/BML_MG.subsample.fastq.gz,/dbcan-nf/dbcan-nf-test_data/BML_MT_1.subsample.fq.gz,/dbcan-nf/dbcan-nf-test_data/BML_MT_2.subsample.fq.gz,
