@@ -1,0 +1,131 @@
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#1ba1e2', 'primaryTextColor':'#fff', 'primaryBorderColor':'#006EAF', 'lineColor':'#1ba1e2', 'secondaryColor':'#6c8ebf', 'tertiaryColor':'#d5e8d4'}}}%%
+flowchart LR
+    subgraph Input["Input Data"]
+        DNA_Long[DNA Long Reads<br/>PacBio HiFi]
+        RNA[RNA Transcriptomes<br/>Optional]
+    end
+
+    subgraph QC["Quality Control & Trimming"]
+        FastQC_RNA[FastQC<br/>RNA]
+        TrimGalore_RNA[TrimGalore<br/>RNA]
+        Note_DNA["DNA Long Reads<br/>Skip QC/Trimming"]
+    end
+
+    subgraph Kraken["Contamination Removal (Optional)"]
+        Kraken2[Kraken2<br/>Classification]
+        KrakenTools[KrakenTools<br/>Extraction]
+    end
+
+    subgraph Assembly["Assembly"]
+        FLYE[FLYE<br/>Long-read Assembly]
+    end
+
+    subgraph GenePred["Gene Prediction"]
+        Pyrodigal[Pyrodigal<br/>Gene Prediction]
+        Gunzip_FAA[GUNZIP<br/>Decompress FAA]
+        Gunzip_GFF[GUNZIP<br/>Decompress GFF]
+    end
+
+    subgraph Annotation["CAZyme Annotation"]
+        RunDBCAN[run_dbCAN<br/>CAZyme Annotation]
+    end
+
+    subgraph Mapping["Read Mapping"]
+        BWA_Index[BWA Index<br/>Index Building]
+        Minimap2_DNA[Minimap2<br/>DNA Mapping<br/>Long-reads]
+        BWA_MEM_RNA[BWA-MEM<br/>RNA Mapping]
+        Samtools_Index[SAMtools Index<br/>BAM Indexing]
+    end
+
+    subgraph Coverage["Coverage Calculation"]
+        CalcCoverage_DNA[dbcan_utils<br/>Calculate Coverage DNA]
+        CalcCoverage_RNA[dbcan_utils<br/>Calculate Coverage RNA]
+        CGC_Depth_DNA[CGC Depth Plot<br/>CGC Depth Plot DNA]
+        CGC_Depth_RNA[CGC Depth Plot<br/>CGC Depth Plot RNA]
+    end
+
+    subgraph Abundance["Abundance Calculation"]
+        CalcAbund_DNA[dbcan_utils<br/>Calculate Abundance DNA]
+        CalcAbund_RNA[dbcan_utils<br/>Calculate Abundance RNA]
+    end
+
+    subgraph Visualization["Visualization"]
+        Plot_DNA[dbcan_plot<br/>Plotting DNA]
+        Plot_RNA[dbcan_plot<br/>Plotting RNA]
+    end
+
+    subgraph Report["Report"]
+        MultiQC[MultiQC<br/>Summary Report]
+    end
+
+    %% Input connections
+    DNA_Long --> Note_DNA
+    DNA_Long --> FLYE
+    RNA --> FastQC_RNA
+    RNA --> TrimGalore_RNA
+
+    %% QC connections
+    FastQC_RNA --> TrimGalore_RNA
+    Note_DNA --> FLYE
+
+    %% Kraken connections (optional, only for RNA)
+    TrimGalore_RNA -.->|optional| Kraken2
+    Kraken2 --> KrakenTools
+
+    %% Assembly connections
+    DNA_Long --> FLYE
+
+    %% Gene prediction connections
+    FLYE --> Pyrodigal
+    Pyrodigal --> Gunzip_FAA
+    Pyrodigal --> Gunzip_GFF
+
+    %% Annotation connections
+    Gunzip_FAA --> RunDBCAN
+    Gunzip_GFF --> RunDBCAN
+
+    %% Mapping connections
+    FLYE --> BWA_Index
+    BWA_Index --> Minimap2_DNA
+    DNA_Long --> Minimap2_DNA
+    TrimGalore_RNA -->|or extracted reads| BWA_MEM_RNA
+    KrakenTools -->|extracted reads| BWA_MEM_RNA
+    BWA_Index --> BWA_MEM_RNA
+    Minimap2_DNA --> Samtools_Index
+    BWA_MEM_RNA --> Samtools_Index
+
+    %% Coverage connections
+    Gunzip_GFF --> CalcCoverage_DNA
+    Samtools_Index --> CalcCoverage_DNA
+    Gunzip_GFF --> CalcCoverage_RNA
+    Samtools_Index --> CalcCoverage_RNA
+    RunDBCAN --> CGC_Depth_DNA
+    Samtools_Index --> CGC_Depth_DNA
+    RunDBCAN --> CGC_Depth_RNA
+    Samtools_Index --> CGC_Depth_RNA
+
+    %% Abundance connections
+    CalcCoverage_DNA --> CalcAbund_DNA
+    RunDBCAN --> CalcAbund_DNA
+    CalcCoverage_RNA --> CalcAbund_RNA
+    RunDBCAN --> CalcAbund_RNA
+
+    %% Visualization connections
+    CalcAbund_DNA --> Plot_DNA
+    CalcAbund_RNA --> Plot_RNA
+
+    %% Report connections
+    FastQC_RNA --> MultiQC
+    Plot_DNA --> MultiQC
+    Plot_RNA --> MultiQC
+
+    %% Styling
+    classDef inputStyle fill:#d5e8d4,stroke:#82b366,stroke-width:2px
+    classDef processStyle fill:#dae8fc,stroke:#6c8ebf,stroke-width:2px
+    classDef outputStyle fill:#fff2cc,stroke:#d6b656,stroke-width:2px
+    classDef noteStyle fill:#f8cecc,stroke:#b85450,stroke-width:2px,stroke-dasharray: 5 5
+
+    class DNA_Long,RNA inputStyle
+    class FastQC_RNA,TrimGalore_RNA,Kraken2,KrakenTools,FLYE,Pyrodigal,Gunzip_FAA,Gunzip_GFF,RunDBCAN,BWA_Index,Minimap2_DNA,BWA_MEM_RNA,Samtools_Index,CalcCoverage_DNA,CalcCoverage_RNA,CGC_Depth_DNA,CGC_Depth_RNA,CalcAbund_DNA,CalcAbund_RNA,Plot_DNA,Plot_RNA processStyle
+    class MultiQC outputStyle
+    class Note_DNA noteStyle

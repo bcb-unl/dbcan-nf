@@ -1,0 +1,76 @@
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#1ba1e2', 'primaryTextColor':'#fff', 'primaryBorderColor':'#006EAF', 'lineColor':'#1ba1e2', 'secondaryColor':'#6c8ebf', 'tertiaryColor':'#d5e8d4'}}}%%
+flowchart LR
+    subgraph Input["Input Data"]
+        DNA[DNA Reads<br/>Short-read Data]
+    end
+
+    subgraph QC["Quality Control & Trimming"]
+        FastQC[FastQC]
+        TrimGalore[TrimGalore]
+    end
+
+    subgraph Kraken["Contamination Removal (Optional)"]
+        Kraken2[Kraken2<br/>Classification]
+        KrakenTools[KrakenTools<br/>Extraction]
+    end
+
+    subgraph Conversion["Format Conversion"]
+        Seqtk[SEQTK<br/>FASTQ to FASTA]
+    end
+
+    subgraph Annotation["CAZyme Annotation"]
+        DownloadDB[Download CAZy<br/>DIAMOND Database]
+        Diamond[DIAMOND BLASTX<br/>CAZyme Annotation]
+    end
+
+    subgraph Abundance["Abundance Calculation"]
+        DBCAN_Asmfree[dbcan_asmfree<br/>Calculate Abundance<br/>FPKM]
+    end
+
+    subgraph Visualization["Visualization"]
+        Plot[dbcan_plot<br/>Plotting]
+    end
+
+    subgraph Report["Report"]
+        MultiQC[MultiQC<br/>Summary Report]
+    end
+
+    %% Input connections
+    DNA --> FastQC
+    DNA --> TrimGalore
+
+    %% QC connections
+    FastQC --> TrimGalore
+
+    %% Kraken connections (optional)
+    TrimGalore -.->|optional| Kraken2
+    Kraken2 --> KrakenTools
+
+    %% Conversion connections
+    TrimGalore -->|or extracted reads| Seqtk
+    KrakenTools -->|extracted reads| Seqtk
+
+    %% Annotation connections
+    DownloadDB --> Diamond
+    Seqtk --> Diamond
+
+    %% Abundance connections
+    Diamond --> DBCAN_Asmfree
+    TrimGalore -->|original reads| DBCAN_Asmfree
+    KrakenTools -->|original reads| DBCAN_Asmfree
+
+    %% Visualization connections
+    DBCAN_Asmfree --> Plot
+
+    %% Report connections
+    FastQC --> MultiQC
+    Plot --> MultiQC
+
+    %% Styling
+    classDef inputStyle fill:#d5e8d4,stroke:#82b366,stroke-width:2px
+    classDef processStyle fill:#dae8fc,stroke:#6c8ebf,stroke-width:2px
+    classDef outputStyle fill:#fff2cc,stroke:#d6b656,stroke-width:2px
+
+    class DNA inputStyle
+    class FastQC,TrimGalore,Kraken2,KrakenTools,Seqtk,DownloadDB,Diamond,DBCAN_Asmfree,Plot processStyle
+    class MultiQC outputStyle

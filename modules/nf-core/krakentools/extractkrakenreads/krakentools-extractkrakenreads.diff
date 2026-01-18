@@ -1,0 +1,23 @@
+Changes in component 'nf-core/krakentools/extractkrakenreads'
+'modules/nf-core/krakentools/extractkrakenreads/meta.yml' is unchanged
+Changes in 'krakentools/extractkrakenreads/main.nf':
+--- modules/nf-core/krakentools/extractkrakenreads/main.nf
++++ modules/nf-core/krakentools/extractkrakenreads/main.nf
+@@ -39,7 +39,11 @@
+         -k $classified_reads_assignment \\
+         $report_option \\
+         $input_reads_command \\
+-        $output_reads_command
++        $output_reads_command \\
++        --include-parents \\
++        --exclude \\
++        --fastq-output 
++
+ 
+     $gzip_reads_command
+ 
+
+'modules/nf-core/krakentools/extractkrakenreads/environment.yml' is unchanged
+'modules/nf-core/krakentools/extractkrakenreads/tests/main.nf.test' is unchanged
+'modules/nf-core/krakentools/extractkrakenreads/tests/main.nf.test.snap' is unchanged
+************************************************************

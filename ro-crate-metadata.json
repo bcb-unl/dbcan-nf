@@ -92,7 +92,7 @@
                     "@id": ".prettierignore"
                 }
             ],
-            "isBasedOn": "https://github.com/nf-core/dbcanmicrobiome",
+            "isBasedOn": "https://github.com/bcb-unl/dbcan-nf",
             "license": "MIT",
             "mainEntity": {
                 "@id": "main.nf"
@@ -102,7 +102,7 @@
                     "@id": "#187d4a36-b3b2-4615-9e19-d5013725484f"
                 }
             ],
-            "name": "nf-core/dbcanmicrobiome"
+            "name": "dbcan-nf"
         },
         {
             "@id": "ro-crate-metadata.json",
@@ -137,7 +137,7 @@
                 "MIT"
             ],
             "name": [
-                "nf-core/dbcanmicrobiome"
+                "dbcan-nf"
             ],
             "programmingLanguage": {
                 "@id": "https://w3id.org/workflowhub/workflow-ro-crate#nextflow"
@@ -146,8 +146,7 @@
                 "@id": "https://nf-co.re/"
             },
             "url": [
-                "https://github.com/nf-core/dbcanmicrobiome",
-                "https://nf-co.re/dbcanmicrobiome/dev/"
+                "https://github.com/bcb-unl/dbcan-nf"
             ],
             "version": [
                 "1.0.0dev"
@@ -176,13 +175,13 @@
             "mainEntity": {
                 "@id": "main.nf"
             },
-            "name": "Test suite for nf-core/dbcanmicrobiome"
+            "name": "Test suite for dbcan-nf"
         },
         {
             "@id": "#abddb554-891c-4bfc-91bd-463527ee48f8",
             "@type": "TestInstance",
-            "name": "GitHub Actions workflow for testing nf-core/dbcanmicrobiome",
-            "resource": "repos/nf-core/dbcanmicrobiome/actions/workflows/ci.yml",
+            "name": "GitHub Actions workflow for testing dbcan-nf",
+            "resource": "repos/bcb-unl/dbcan-nf/actions/workflows/ci.yml",
             "runsOn": {
                 "@id": "https://w3id.org/ro/terms/test#GithubService"
             },

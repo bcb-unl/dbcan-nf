@@ -1,5 +1,5 @@
 //
-// Subworkflow with functionality specific to the nf-core/dbcanmicrobiome pipeline
+// Subworkflow with functionality specific to the dbcan-nf pipeline
 //
 
 /*
@@ -67,25 +67,36 @@ workflow PIPELINE_INITIALISATION {
     // Create channel from input file provided through params.input
     //
 
-    Channel
-        .fromList(samplesheetToList(params.input, "${projectDir}/assets/schema_input.json"))
-        .map {
-            meta, fastq_1, fastq_2 ->
-                if (!fastq_2) {
-                    return [ meta.id, meta + [ single_end:true ], [ fastq_1 ] ]
+        ch_samplesheet = Channel
+            .fromList(samplesheetToList(params.input, "${projectDir}/assets/schema_input.json"))
+            .map { meta, fastq_1, fastq_2, transcriptome_1, transcriptome_2 ->
+                if (params.type == "shortreads") {
+                    def meta_map = meta + [
+                        single_end: !fastq_2,
+                        transcriptome: (transcriptome_1 ? true : false),
+                        transcriptome_single_end: (!transcriptome_2 && transcriptome_1) ? true : false
+                    ]
+                    def fastqs = [fastq_1, fastq_2].findAll { it }
+                    def transcriptomes = [transcriptome_1, transcriptome_2].findAll { it }
+                    tuple(meta_map, fastqs, transcriptomes)
+                } else if (params.type == "longreads") {
+                    def meta_map = meta + [
+                        long_reads: true,
+                        transcriptome: (transcriptome_1 ? true : false)
+                    ]
+                    def long_reads = [fastq_1, fastq_2].findAll { it }
+                    def transcriptomes = [transcriptome_1, transcriptome_2].findAll { it }
+                    tuple(meta_map, long_reads, transcriptomes)
+                } else if (params.type == "assemfree") {
+                    def meta_map = meta + [
+                        single_end: !fastq_2
+                    ]
+                    def fastqs = [fastq_1, fastq_2].findAll { it }
+                    tuple(meta_map, fastqs)
                 } else {
-                    return [ meta.id, meta + [ single_end:false ], [ fastq_1, fastq_2 ] ]
+                    error "Unknown input_mode: ${params.type}"
                 }
-        }
-        .groupTuple()
-        .map { samplesheet ->
-            validateInputSamplesheet(samplesheet)
-        }
-        .map {
-            meta, fastqs ->
-                return [ meta, fastqs.flatten() ]
-        }
-        .set { ch_samplesheet }
+            }
 
     emit:
     samplesheet = ch_samplesheet

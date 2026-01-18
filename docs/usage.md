@@ -6,7 +6,13 @@
 
 ## Introduction
 
-<!-- TODO nf-core: Add documentation about anything specific to running your pipeline. For general topics, please point to (and add to) the main nf-core website. -->
+This pipeline supports three analysis modes for CAZyme annotation in microbiome data:
+
+- **Short reads** (`--type shortreads`): Assembly-based analysis for Illumina short-read data using MEGAHIT
+- **Long reads** (`--type longreads`): Assembly-based analysis for PacBio/Nanopore long-read data using Flye
+- **Assembly free** (`--type assemfree`): Direct annotation without assembly using seqtk and DIAMOND blastx
+
+The assembly free mode is particularly useful for large datasets where assembly is computationally expensive or when you want to avoid potential assembly artifacts. It directly converts reads to FASTA format and uses DIAMOND blastx to search against the CAZyme database, followed by abundance calculation using dbcan_asmfree.
 
 ## Samplesheet input
 
@@ -155,6 +161,47 @@ If `-profile` is not specified, the pipeline will run locally and expect all sof
   - A generic configuration profile to enable [Wave](https://seqera.io/wave/) containers. Use together with one of the above (requires Nextflow ` 24.03.0-edge` or later).
 - `conda`
   - A generic configuration profile to be used with [Conda](https://conda.io/docs/). Please only use Conda as a last resort i.e. when it's not possible to run the pipeline with Docker, Singularity, Podman, Shifter, Charliecloud, or Apptainer.
+
+## Short reads modes: subsample & coassembly
+
+Only relevant when `--type shortreads`.
+
+### Subsample mode
+- Purpose: downsample each sample before assembly to reduce compute and to quickly sanity-check the pipeline.
+- Parameters:
+  - `--subsample`: enable subsampling.
+  - `--subsample_size`: number of reads per file to keep (default `20000000` in config).
+- Behavior:
+  - Applies per-sample before MEGAHIT, using `seqtk sample`.
+  - Mutually exclusive with `--coassembly`.
+- Example:
+```bash
+nextflow run nf-core/dbcanmicrobiome \
+  --type shortreads \
+  --input samplesheet.csv \
+  --outdir results_subsample \
+  --subsample \
+  --subsample_size 5000000 \
+  -profile docker
+```
+
+### Coassembly mode
+- Purpose: co-assemble all short-read samples together to improve contig continuity and shared feature detection.
+- Parameters:
+  - `--coassembly`: enable coassembly across all samples.
+- Requirements & behavior:
+  - Needs at least 2 samples; pipeline will error if fewer.
+  - Combines all reads (paired/single preserved) and runs a single MEGAHIT assembly.
+  - Mutually exclusive with `--subsample`.
+- Example:
+```bash
+nextflow run nf-core/dbcanmicrobiome \
+  --type shortreads \
+  --input samplesheet.csv \
+  --outdir results_coassembly \
+  --coassembly \
+  -profile docker
+```
 
 ### `-resume`
 
