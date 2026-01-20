@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"path": "../nf-core-dbcanmicrobiome-test_data"
+		},
+		{
+			"name": "dbcan-nf",
+			"path": "."
+		},
+		{
+			"path": "../run_dbcan"
+		}
+	],
+	"settings": {}
+}

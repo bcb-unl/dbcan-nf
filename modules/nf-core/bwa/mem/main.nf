@@ -45,14 +45,21 @@ process BWA_MEM {
     fi
     """ : ""
     
+    // Use the actual index prefix for the index path (works for both normal and coassembly mode)
+    def index_path = "bwa_${index_prefix}/bwa_${index_prefix}"
+    
     """
     ${index_setup}
-    INDEX=`find -L ./ -name "*.amb" | sed 's/\\.amb\$//'`
+    # Verify index files exist
+    if [ ! -f "${index_path}.amb" ]; then
+        echo "Error: BWA index file not found: ${index_path}.amb"
+        exit 1
+    fi
 
     bwa mem \\
         $args \\
         -t $task.cpus \\
-        bwa_${meta.id}/bwa_${index_prefix} \\
+        ${index_path} \\
         $read1 $read2 | samtools $samtools_command $args2 ${reference} --threads $task.cpus -o ${prefix}.${extension} -
 
     cat <<-END_VERSIONS > versions.yml

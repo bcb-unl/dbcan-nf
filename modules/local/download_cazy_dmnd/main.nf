@@ -16,10 +16,10 @@ process DOWNLOAD_CAZY_DMND {
 
     script:
     def args = task.ext.args ?: ''
-    def cazy_url = task.ext.cazy_url ?: 'https://bcb.unl.edu/dbCAN2/download/run_dbCAN_database_total/CAZyDB.07242025.fa'
-    def cazyid_subfam_url = task.ext.cazyid_subfam_url ?: 'https://bcb.unl.edu/dbCAN2/download/Databases/CAZyID_subfam_mapping.tsv'
-    def fam_sub_mapping_url = task.ext.fam_sub_mapping_url ?: 'https://bcb.unl.edu/dbCAN2/download/run_dbCAN_database_total/fam-substrate-mapping.tsv'
-    def subfam_ec_mapping_url = task.ext.ec_mapping_url ?: 'https://bcb.unl.edu/dbCAN2/download/Databases/subfam_EC_mapping.tsv'
+    def cazy_url = task.ext.cazy_url ?: 'https://dbcan.s3.us-west-2.amazonaws.com/dbcan_asmfree/CAZyDB.07242025.fa'
+    def cazyid_subfam_url = task.ext.cazyid_subfam_url ?: 'https://dbcan.s3.us-west-2.amazonaws.com/dbcan_asmfree/CAZyID_subfam_mapping.tsv'
+    def fam_sub_mapping_url = task.ext.fam_sub_mapping_url ?: 'https://dbcan.s3.us-west-2.amazonaws.com/dbcan_asmfree/fam-substrate-mapping.tsv'
+    def subfam_ec_mapping_url = task.ext.ec_mapping_url ?: 'https://dbcan.s3.us-west-2.amazonaws.com/dbcan_asmfree/subfam_EC_mapping.tsv'
     """
     # Download CAZyDB FASTA file
     wget -c ${cazy_url} -O CAZyDB.fa

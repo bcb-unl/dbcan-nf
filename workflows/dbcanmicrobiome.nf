@@ -220,7 +220,15 @@ workflow DBCANMICROBIOME {
         // Output: ch_coassembly_input (tuple(meta, all_read1, all_read2 OR null))
 
         // Save original samples for later read mapping
+        // Ensure meta.id has _dna suffix for consistency
         ch_original_samples_dna = ch_megahit_input_dna
+            .map { meta, r1, r2 ->
+                def new_meta = meta.clone()
+                if (!new_meta.id.endsWith('_dna')) {
+                    new_meta.id = new_meta.id + '_dna'
+                }
+                tuple(new_meta, r1, r2)
+            }
 
         // [meta, r1, r2, meta, r1, r2, ...]
         ch_coassembly_input_dna = ch_megahit_input_dna
@@ -305,36 +313,27 @@ workflow DBCANMICROBIOME {
         if (params.coassembly) {
             // In coassembly mode, there should be only one dbcan result (from coassembly)
             // Use combine (not cross) to replicate single result to each original sample
+            // ch_original_samples_dna already has _dna suffix, so we can use it directly
             ch_dbcan_results = ch_dbcan_results
                 .combine(ch_original_samples_dna.map { meta, r1, r2 -> meta })
                 .map { coassembly_meta, dbcan_results, original_meta ->
-                    // Use original sample meta but keep _dna suffix
-                    def new_meta = original_meta.clone()
-                    if (!new_meta.id.endsWith('_dna')) {
-                        new_meta.id = new_meta.id + '_dna'
-                    }
-                    tuple(new_meta, dbcan_results)
+                    // Use original sample meta (already has _dna suffix)
+                    tuple(original_meta, dbcan_results)
                 }
             
             // Also replicate gff and faa to each original sample for downstream processing
             ch_gunzip_gff = ch_gunzip_gff
                 .combine(ch_original_samples_dna.map { meta, r1, r2 -> meta })
                 .map { coassembly_meta, gff, original_meta ->
-                    def new_meta = original_meta.clone()
-                    if (!new_meta.id.endsWith('_dna')) {
-                        new_meta.id = new_meta.id + '_dna'
-                    }
-                    tuple(new_meta, gff)
+                    // Use original sample meta (already has _dna suffix)
+                    tuple(original_meta, gff)
                 }
             
             ch_gunzip_faa = ch_gunzip_faa
                 .combine(ch_original_samples_dna.map { meta, r1, r2 -> meta })
                 .map { coassembly_meta, faa, original_meta ->
-                    def new_meta = original_meta.clone()
-                    if (!new_meta.id.endsWith('_dna')) {
-                        new_meta.id = new_meta.id + '_dna'
-                    }
-                    tuple(new_meta, faa)
+                    // Use original sample meta (already has _dna suffix)
+                    tuple(original_meta, faa)
                 }
         }
         
@@ -367,15 +366,9 @@ workflow DBCANMICROBIOME {
         //ch_megahit_input_final_dna.view()
 
         // In coassembly mode, use original samples for read mapping
-        // Ensure meta.id has _dna suffix for join operations
+        // ch_original_samples_dna already has _dna suffix, so we can use it directly
         if (params.coassembly) {
-            ch_bwameme_input_dna = ch_original_samples_dna.map { meta, r1, r2 ->
-                def new_meta = meta.clone()
-                if (!new_meta.id.endsWith('_dna')) {
-                    new_meta.id = new_meta.id + '_dna'
-                }
-                tuple(new_meta, r1, r2)
-            }
+            ch_bwameme_input_dna = ch_original_samples_dna
         } else {
             ch_bwameme_input_dna = ch_megahit_input_final_dna
         }
@@ -399,14 +392,12 @@ workflow DBCANMICROBIOME {
             
             // Use combine (not cross) to replicate single coassembly result to each original sample
             // combine creates all combinations, cross requires matching keys
+            // ch_original_samples_dna already has _dna suffix, so we can use it directly
             ch_index_dna = ch_index_dna_coassembly
                 .combine(ch_original_samples_dna.map { meta, r1, r2 -> meta })
                 .map { coassembly_meta, index_dir, original_meta ->
-                    // Use sample meta for join and index lookup
+                    // Use sample meta for join and index lookup (already has _dna suffix)
                     def sample_meta = original_meta.clone()
-                    if (!sample_meta.id.endsWith('_dna')) {
-                        sample_meta.id = sample_meta.id + '_dna'
-                    }
                     // Store coassembly meta.id in a custom field for later use
                     sample_meta.coassembly_index_id = coassembly_meta.id
                     tuple(sample_meta, index_dir)
@@ -416,11 +407,8 @@ workflow DBCANMICROBIOME {
             ch_megahit_contigs_dna_for_join = ch_megahit_contigs_dna
                 .combine(ch_original_samples_dna.map { meta, r1, r2 -> meta })
                 .map { contigs_meta, contigs, original_meta ->
-                    def new_meta = original_meta.clone()
-                    if (!new_meta.id.endsWith('_dna')) {
-                        new_meta.id = new_meta.id + '_dna'
-                    }
-                    tuple(new_meta, contigs)
+                    // Use original sample meta (already has _dna suffix)
+                    tuple(original_meta, contigs)
                 }
         } else {
             BWA_INDEX(ch_megahit_contigs_dna)
