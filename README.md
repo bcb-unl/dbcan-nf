@@ -69,6 +69,7 @@ nextflow run main.nf \
    -profile <docker/singularity/conda> \
    --input samplesheet.csv \
    --outdir <OUTDIR>
+   --skip_kraken_extraction # based on the database size of kraken2, you can skip this step if the database is too large.
 ```
 
 > [!WARNING]
