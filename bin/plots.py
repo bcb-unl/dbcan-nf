@@ -632,6 +632,46 @@ def add_column_type(table): ### Like
     table["fam"] = cols
     return table
 
+def _bar_figsize(n_rows, n_samples, vertical_bar):
+    if vertical_bar:
+        return (
+            min(max(8.0, 6.0 + n_rows * 0.3), 36.0),
+            min(max(6.0, 4.0 + n_samples * 0.35), 45.0),
+        )
+    return (
+        min(max(8.0, 6.0 + n_samples * 0.4), 48.0),
+        min(max(6.0, 5.0 + n_rows * 0.3), 36.0),
+    )
+
+
+def _plot_sample_legend(ax, n_samples):
+    handles, labels = ax.get_legend_handles_labels()
+    if not handles:
+        return
+    if n_samples > 10:
+        ncol = min(4, max(2, (n_samples + 9) // 12))
+        fontsize = max(5, min(9, 13 - n_samples // 6))
+        ax.legend(
+            handles,
+            labels,
+            loc='center left',
+            bbox_to_anchor=(1.01, 0.5),
+            fontsize=fontsize,
+            ncol=ncol,
+            frameon=False,
+        )
+    elif n_samples > 5:
+        ax.legend(
+            loc='upper center',
+            bbox_to_anchor=(0.5, -0.08),
+            ncol=min(3, n_samples),
+            fontsize=7,
+            frameon=False,
+        )
+    else:
+        ax.legend(loc='best', fontsize='small', frameon=False)
+
+
 def heatmap_plot(args):
     pds = [filter_out_enzyme_number(pd.read_csv(filename,sep="\t")) for filename in args.input.split(",")]
     samples = args.samples.split(",")
@@ -660,14 +700,16 @@ def heatmap_plot(args):
     sns.set_context("paper")
 
     n_rows, n_cols = data.shape
-    cell_width = 0.7
+    cell_width = 0.55 if n_cols > 15 else 0.7
     cell_height = 0.5
     min_width = 6
     min_height = 4
-    max_width = 30
+    max_width = 50 if n_cols > 15 else 30
     max_height = 30
     fig_width = min(max(n_cols * cell_width, min_width), max_width)
     fig_height = min(max(n_rows * cell_height, min_height), max_height)
+    show_annot = args.show_abund and (n_cols * n_rows) <= 240
+    xtick_fs = max(6, min(10, 12 - n_cols // 5))
 
     if args.palette:
         cmap = args.palette
@@ -683,7 +725,7 @@ def heatmap_plot(args):
             col_cluster=False, cbar_kws={"shrink": 0.3},
             figsize=(fig_width, fig_height)
         )
-        plt.setp(g.ax_heatmap.get_xticklabels(), rotation=30, ha='right', fontsize=10)
+        plt.setp(g.ax_heatmap.get_xticklabels(), rotation=45, ha='right', fontsize=xtick_fs)
         plt.setp(g.ax_heatmap.get_yticklabels(), fontsize=10)
         if args.show_fig:
             plt.show()
@@ -691,18 +733,18 @@ def heatmap_plot(args):
             plt.savefig("heatmap_cluster.pdf", bbox_inches='tight')
     else:
         plt.figure(figsize=(fig_width, fig_height))
-        if args.show_abund:
+        if show_annot:
             ax = sns.heatmap(
                 data, cmap=cmap, yticklabels=True, annot=True, fmt=".0f", linewidths=.5,
                 cbar=True, vmin=0.1, cbar_kws={"shrink": 0.3, "anchor": (0, 0.0)}
             )
         else:
             ax = sns.heatmap(
-                data, cmap=cmap, yticklabels=True, annot=args.show_abund, fmt=".0f", linewidths=0,
+                data, cmap=cmap, yticklabels=True, annot=False, fmt=".0f", linewidths=0,
                 cbar=True, vmin=0.1, cbar_kws={"shrink": 0.3, "anchor": (0, 0.0)}
             )
         ax.collections[0].colorbar.ax.tick_params(labelsize=8)
-        plt.xticks(rotation=30, ha='right', fontsize=10)
+        plt.xticks(rotation=45, ha='right', fontsize=xtick_fs)
         plt.yticks(fontsize=10)
         plt.tight_layout(pad=0.5)
         if args.show_fig:
@@ -740,23 +782,30 @@ def bar_plot(args):
             data = data.loc[data[args.col].isin(args.value.split(","))]
         else:
             data = data.iloc[0:int(args.top),:]
-    ### normal
-    if args.vertical_bar:
-        ax = data.plot.barh(x=x, y=samples)
-        plt.ylabel("")
-        plt.xlabel("Abundance")
-    else:
-        ax = data.plot(x=x, y=samples, kind="bar")
-        plt.xticks(rotation=90)
-        plt.xlabel("")
-        plt.ylabel("Abundance")
+    n_samples = len(samples)
+    n_rows = len(data)
+    fig_width, fig_height = _bar_figsize(n_rows, n_samples, args.vertical_bar)
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
 
-    plt.title(f"The most top{args.top} different families")
+    if args.vertical_bar:
+        data.plot.barh(x=x, y=samples, ax=ax)
+        ax.set_ylabel("")
+        ax.set_xlabel("Abundance")
+    else:
+        data.plot(x=x, y=samples, kind="bar", ax=ax)
+        plt.xticks(rotation=90)
+        ax.set_xlabel("")
+        ax.set_ylabel("Abundance")
+
+    ax.set_title(f"The most top{args.top} different families")
+    _plot_sample_legend(ax, n_samples)
 
     if not args.pdf.endswith(".pdf"):
-        args.pdf += args.pdf+".pdf"
+        args.pdf += ".pdf"
 
-    plt.savefig(f"{args.pdf}")
+    plt.tight_layout()
+    plt.savefig(f"{args.pdf}", bbox_inches='tight', pad_inches=0.15)
+    plt.close(fig)
     print(f"Saving plot to file: {args.pdf}")
 
 def check_input_files_min_lines(input_files, min_lines=2):

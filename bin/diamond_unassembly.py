@@ -114,25 +114,52 @@ def extract_CAZy_from_Tsn(tsn):
         parts = tsn.strip("|").split("|")[1:]
         return [part.strip() for part in parts if part.strip()]  # Filter out empty strings
 
+#class PafRecord(object):
+#    def __init__(self, lines):
+#        self.Qsn = lines[0]
+#        self.Qsl = lines[12]
+#        self.Qs  = int(lines[6]) - 1
+#        self.Qe  = lines[7]
+#        self.Strand = lines[4]
+#        self.Tsn = lines[1]
+#        self.Tsl = lines[13]
+#        self.Ts  = int(lines[8]) - 1
+#        self.Te  = lines[9]
+#        self.Nrm = lines[11]
+#        self.Abl = lines[3]
+#        self.Mq  = lines[10]
+#        self.SeqID = self.Tsn.split('|')[0]
+        # Use special extraction function for CAZy annotations
+#        cazy_list = extract_CAZy_from_Tsn(self.Tsn)
+#        self.CAZys = CAZy_filter(cazy_list) if cazy_list else set()
+#        self.UniReadId = lines[0].split(".")[0]
+
 class PafRecord(object):
     def __init__(self, lines):
         self.Qsn = lines[0]
-        self.Qsl = lines[12]
-        self.Qs  = int(lines[6]) - 1
-        self.Qe  = lines[7]
+
+        if len(lines) >= 15:
+            # qseqid sseqid ... evalue bitscore qcovhsp qlen slen
+            self.Qsl = lines[13]
+            self.Tsl = lines[14]
+        else:
+            # qseqid sseqid ... evalue bitscore qlen slen
+            self.Qsl = lines[12]
+            self.Tsl = lines[13]
+
+        self.Qs = int(lines[6]) - 1
+        self.Qe = lines[7]
         self.Strand = lines[4]
         self.Tsn = lines[1]
-        self.Tsl = lines[13]
-        self.Ts  = int(lines[8]) - 1
-        self.Te  = lines[9]
+        self.Ts = int(lines[8]) - 1
+        self.Te = lines[9]
         self.Nrm = lines[11]
         self.Abl = lines[3]
-        self.Mq  = lines[10]
+        self.Mq = lines[10]
         self.SeqID = self.Tsn.split('|')[0]
-        # Use special extraction function for CAZy annotations
         cazy_list = extract_CAZy_from_Tsn(self.Tsn)
         self.CAZys = CAZy_filter(cazy_list) if cazy_list else set()
-        self.UniReadId = lines[0].split(".")[0]
+        self.UniReadId = lines[0].split(".")[0]        
 
     def __str__(self):
         return "\t".join([str(getattr(self, value)) for value in vars(self) if value != "CAZys"])

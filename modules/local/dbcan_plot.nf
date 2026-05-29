@@ -31,6 +31,8 @@ process RUNDBCAN_PLOT_BAR {
     """
     mkdir -p ${prefix}
 
+    export MPLCONFIGDIR=\${TMPDIR:-/tmp}/matplotlib-\${USER:-nf}
+
     dbcan_plot heatmap_plot \\
         --samples ${sample_names} \\
         -i ${input_files_fam_substrate} \\
