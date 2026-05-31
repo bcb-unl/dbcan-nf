@@ -20,22 +20,16 @@ df['CGCID'] = df['Contig ID'].astype(str) + '|' + df['CGC#'].astype(str)
 #   only keep CGCIDs that are in the substrate set
 df = df[df['CGCID'].isin(cgcid_set)]
 
-# for each CGCID, get the range of gene start and stop positions
-def get_cgc_range(group):
-    group_sorted = group.sort_values('Gene Start')
-    first_gene = group_sorted.iloc[0]
-    last_gene = group_sorted.iloc[-1]
-    return pd.Series({
-        'Contig ID': first_gene['Contig ID'],
-        'CGC#': first_gene['CGC#'],
-        'Gene Start': first_gene['Gene Start'],
-        'Gene Stop': last_gene['Gene Stop']
-    })
-
+# For each CGCID, get contig span from first/last gene (by Gene Start)
 ranges = (
-    df.groupby('CGCID', group_keys=False)
-      .apply(get_cgc_range)
-      .reset_index()
+    df.sort_values(['CGCID', 'Gene Start'])
+      .groupby('CGCID', as_index=False)
+      .agg({
+          'Contig ID': 'first',
+          'CGC#': 'first',
+          'Gene Start': 'first',
+          'Gene Stop': 'last',
+      })
 )
 
 ranges.to_csv(out_tsv, sep='\t', index=False, header=True)

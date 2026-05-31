@@ -56,11 +56,17 @@ First, prepare a samplesheet with your input data that looks as follows:
 `samplesheet.csv`:
 
 ```csv
-sample,fastq_1,fastq_2
-CONTROL_REP1,AEG588A1_S1_L002_R1_001.fastq.gz,AEG588A1_S1_L002_R2_001.fastq.gz
+sample,fastq_1,fastq_2,assembly_fasta_dna
+CONTROL_REP1,AEG588A1_S1_L002_R1_001.fastq.gz,AEG588A1_S1_L002_R2_001.fastq.gz,
+SAMPLE_LONGREADS,longreads_sample_R1.fastq.gz,,sample_assembly.fasta.gz
 ```
 
-Each row represents a fastq file (single-end) or a pair of fastq files (paired end).
+Each row represents a fastq file (single-end) or a pair of fastq files (paired end).  
+The optional `assembly_fasta_dna` column can be used to provide a pre-assembled DNA contig/scaffold FASTA (e.g. `.fa`, `.fna`, `.fasta`, optionally gzipped).  
+For **long-read mode** (`--type longreads`):
+
+- If `assembly_fasta_dna` is **empty**, the pipeline will assemble reads using Flye and use the resulting contigs for downstream analysis.
+- If `assembly_fasta_dna` is **provided**, the pipeline will **skip Flye assembly** for that sample and use the given FASTA directly for gene prediction and downstream dbCAN analysis.
 
 Now, you can run the pipeline using:
 
@@ -68,8 +74,10 @@ Now, you can run the pipeline using:
 nextflow run main.nf \
    -profile <docker/singularity/conda> \
    --input samplesheet.csv \
-   --outdir <OUTDIR>
-   --skip_kraken_extraction # based on the database size of kraken2, you can skip this step if the database is too large.
+   --outdir <OUTDIR> \
+   --skip_kraken_extraction \  # based on the database size of kraken2, you can skip this step if the database is too large.
+   --type longreads \          # enable long-read mode
+   --flye_mode '--nano-raw'    # example: set Flye read type for Nanopore data
 ```
 
 > [!WARNING]

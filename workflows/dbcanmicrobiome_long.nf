@@ -61,7 +61,14 @@ workflow DBCANMICROBIOMELONG {
         ch_samplesheet_dna = ch_samplesheet
             .map { meta, fastqs, transcriptomes ->
                 def fq_list = fastqs ?: []
-                def dna_meta = [ id: meta.id+'_dna', single_end: meta.single_end ]
+                def dna_meta = [
+                    id         : meta.id + '_dna',
+                    single_end : meta.single_end
+                ]
+                // Propagate optional assembly FASTA for DNA if provided in samplesheet
+                if (meta.containsKey('assembly_fasta_dna') && meta.assembly_fasta_dna) {
+                    dna_meta.assembly_fasta_dna = meta.assembly_fasta_dna
+                }
                 tuple(dna_meta, fq_list)
             }
             .filter { meta, fq_list -> fq_list && fq_list.size() > 0 }
@@ -108,7 +115,13 @@ workflow DBCANMICROBIOMELONG {
 
         // 2. pair-end process
         // DNA: long reads skip QC/trim, pass through directly
-        ch_trimmed_reads_dna = ch_samplesheet_dna
+        // Keep all DNA reads for downstream mapping
+        ch_trimmed_reads_dna_all = ch_samplesheet_dna
+        // For assembly, only use samples without direct assembly FASTA
+        ch_trimmed_reads_dna = ch_trimmed_reads_dna_all
+            .filter { meta, reads_list ->
+                !meta.containsKey('assembly_fasta_dna') || !meta.assembly_fasta_dna
+            }
 
         // RNA: only perform QC/trim when RNA samples exist
         FASTQC_TRIMGALORE_RNA (
@@ -146,19 +159,31 @@ workflow DBCANMICROBIOMELONG {
                 tuple(meta, reads_list[0])
             }
 
-        // Use original reads
+        // Use original reads for FLYE
         ch_flye_input_final_dna = ch_flye_input_dna
 
-
-        // pair-end for FLYE
-        FLYE ( ch_flye_input_final_dna, '--pacbio-hifi' )
+        // Run FLYE for samples without direct assembly FASTA
+        FLYE ( ch_flye_input_final_dna, params.flye_mode )
         ch_versions = ch_versions.mix ( FLYE.out.versions )
         ch_flye_contigs_dna = FLYE.out.fasta
+
+        // For samples with user-provided assembly FASTA, bypass assembly and use FASTA directly
+        ch_contigs_direct_dna = ch_samplesheet_dna
+            .filter { meta, fq_list ->
+                meta.containsKey('assembly_fasta_dna') && meta.assembly_fasta_dna
+            }
+            .map { meta, fq_list ->
+                def fasta_path = file(meta.assembly_fasta_dna, checkIfExists: true)
+                tuple(meta, fasta_path)
+            }
+
+        // Unified contig channel: mix FLYE output and direct assembly FASTA
+        ch_contigs_dna_final = ch_flye_contigs_dna.mix(ch_contigs_direct_dna)
 
         //
         // MODULE: Pyrodigal to find genes in metagenomics data
         // Will make it as subworkflow
-        PYRODIGAL ( ch_flye_contigs_dna, 'gff' )
+        PYRODIGAL ( ch_contigs_dna_final, 'gff' )
         ch_versions = ch_versions.mix(PYRODIGAL.out.versions)
         ch_faa = PYRODIGAL.out.faa
         ch_gff = PYRODIGAL.out.annotations
@@ -213,16 +238,19 @@ workflow DBCANMICROBIOMELONG {
                 }
                 tuple(new_meta, dbcan_results)
             }
-        //ch_flye_input_final_dna.view()
-
-        ch_bwameme_input_dna = ch_flye_input_final_dna
+        // Prepare DNA reads for mapping (use original reads for all samples)
+        // Long reads have only a single file, use directly
+        ch_bwameme_input_dna = ch_trimmed_reads_dna_all
+            .map { meta, reads_list ->
+                tuple(meta, reads_list[0])
+            }
         //ch_bwameme_input_dna.view()
         ch_bwameme_input_rna = ch_extracted_from_kraken2_reads_rna
         //ch_bwameme_input_rna.view()
 
         //
         BWA_INDEX(
-            ch_flye_contigs_dna
+            ch_contigs_dna_final
         )
 
         ch_index_dna = BWA_INDEX.out.index
@@ -278,7 +306,7 @@ workflow DBCANMICROBIOMELONG {
             tuple(key, meta, idx)
         }
 
-        ch_contigs_dna_keyed = ch_flye_contigs_dna.map { meta, fasta ->
+        ch_contigs_dna_keyed = ch_contigs_dna_final.map { meta, fasta ->
             def key = meta.id.replaceFirst(/_dna$/, '')
             tuple(key, meta, fasta)
         }

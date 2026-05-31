@@ -40,6 +40,14 @@
                 "exists": true,
                 "pattern": "^\\S+\\.f(ast)?q\\.gz$",
                 "errorMessage": "Transcriptome FastQ file for reads 2 cannot contain spaces and must have extension '.fq.gz' or '.fastq.gz'"
+            },
+            "assembly_fasta_dna": {
+                "type": "string",
+                "format": "file-path",
+                "exists": true,
+                "pattern": "^\\S+\\.(fa|fasta|fna)(\\.gz)?$",
+                "errorMessage": "Assembly FASTA for DNA cannot contain spaces and must have extension '.fa', '.fna', '.fasta' (optionally with '.gz')",
+                "meta": ["assembly_fasta_dna"]
             }
         },
         "required": ["sample", "fastq_1"]

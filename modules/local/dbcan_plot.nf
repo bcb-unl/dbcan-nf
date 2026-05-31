@@ -1,5 +1,5 @@
 process RUNDBCAN_PLOT_BAR {
-    tag "${meta_list.join('_')}"
+    tag { task.ext.prefix ?: 'plot' }
     label 'process_medium'
 
     conda "bioconda::dbcan=5.2.2"
@@ -21,7 +21,7 @@ process RUNDBCAN_PLOT_BAR {
     script:
     def args = task.ext.args ?: ''
     def meta_ids = meta_list instanceof List ? meta_list : [meta_list]
-    def prefix = task.ext.prefix ?: "${meta_ids.join('_')}_pdf"
+    def prefix = task.ext.prefix ?: 'plot_pdf'
     def sample_names = meta_ids.join(',')
     def input_files_fam = abund_dirs.collect { "${it}/fam_abund.out" }.join(',')
     def input_files_subfam = abund_dirs.collect { "${it}/subfam_abund.out" }.join(',')
@@ -30,6 +30,8 @@ process RUNDBCAN_PLOT_BAR {
 
     """
     mkdir -p ${prefix}
+
+    export MPLCONFIGDIR=\${TMPDIR:-/tmp}/matplotlib-\${USER:-nf}
 
     dbcan_plot heatmap_plot \\
         --samples ${sample_names} \\
