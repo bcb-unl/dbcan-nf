@@ -221,6 +221,11 @@
             "type": "string",
             "default": "--pacbio-hifi"
         },
+        "flye_extra_args": {
+            "type": "string",
+            "default": "--meta --asm-coverage 50",
+            "description": "Extra Flye CLI flags for metagenome assembly (e.g. --meta)"
+        },
         "kraken_db": {
             "type": "string"
         },
