@@ -31,6 +31,7 @@ include { RUNDBCAN_UTILS_CAL_ABUND     as RUNDBCAN_UTILS_CAL_ABUND_RNA    } from
 include { RUNDBCAN_PLOT_BAR            as RUNDBCAN_PLOT_BAR_DNA        } from '../modules/local/dbcan_plot'
 include { RUNDBCAN_PLOT_BAR            as RUNDBCAN_PLOT_BAR_RNA        } from '../modules/local/dbcan_plot'
 include { SEQTK_SAMPLE                 } from '../modules/nf-core/seqtk/sample/main'
+include { SEQTK_SAMPLE_PAIRED          } from '../modules/local/seqtk_sample_paired/main'
 include { COMBINE_PAIRED_READS        } from '../modules/local/combine_raw_reads_before_coassembly'
 // new subworkflows
 include { FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS as FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_DNA } from '../subworkflows/nf-core/fastq_extract_kraken_krakentools'
@@ -182,29 +183,41 @@ workflow DBCANMICROBIOME {
         // MODULE: Megahit to assemble metagenomics
         // make sure all reads are the list
     if (params.subsample && !params.coassembly) {
-        // Subsample each read (single/paired)
-        ch_subsample_input_dna = ch_megahit_input_dna
-        .flatMap { meta, read1, read2 ->
-            def reads = read2 ? [read1, read2] : [read1]
-            reads.collect { tuple(meta, it, params.subsample_size as Integer) }
-        }
+        ch_megahit_input_paired_dna = ch_megahit_input_dna
+            .filter { meta, read1, read2 -> read2 != null }
+        ch_megahit_input_single_dna = ch_megahit_input_dna
+            .filter { meta, read1, read2 -> read2 == null }
 
-        SEQTK_SAMPLE(ch_subsample_input_dna)
-
-    ch_subsampled_dna = SEQTK_SAMPLE.out.reads
-        .map { meta, reads -> tuple(meta, reads) }
-        .groupTuple(by: 0)
-        .map { meta, reads_list ->
-            def subsample_meta = meta.clone()
-            subsample_meta.id = meta.id + '_subsample'
-            def sorted_reads = reads_list.sort { it.toString() }
-            if (sorted_reads.size() == 2) {
-                tuple(subsample_meta, sorted_reads[0], sorted_reads[1])
-            } else {
-                tuple(subsample_meta, sorted_reads[0], null)
+        ch_subsample_input_paired_dna = ch_megahit_input_paired_dna
+            .map { meta, read1, read2 ->
+                tuple(meta, read1, read2, params.subsample_size as Integer)
             }
-        }
-        ch_megahit_input_final_dna = ch_subsampled_dna
+        ch_subsample_input_single_dna = ch_megahit_input_single_dna
+            .map { meta, read1, read2 ->
+                tuple(meta, read1, params.subsample_size as Integer)
+            }
+
+        SEQTK_SAMPLE_PAIRED(ch_subsample_input_paired_dna)
+        SEQTK_SAMPLE(ch_subsample_input_single_dna)
+
+        ch_versions = ch_versions.mix(SEQTK_SAMPLE_PAIRED.out.versions)
+        ch_versions = ch_versions.mix(SEQTK_SAMPLE.out.versions)
+
+        ch_subsampled_paired_dna = SEQTK_SAMPLE_PAIRED.out.reads
+            .map { meta, read1, read2 ->
+                def subsample_meta = meta.clone()
+                subsample_meta.id = meta.id + '_subsample'
+                tuple(subsample_meta, read1, read2)
+            }
+
+        ch_subsampled_single_dna = SEQTK_SAMPLE.out.reads
+            .map { meta, reads ->
+                def subsample_meta = meta.clone()
+                subsample_meta.id = meta.id + '_subsample'
+                tuple(subsample_meta, reads, null)
+            }
+
+        ch_megahit_input_final_dna = ch_subsampled_paired_dna.mix(ch_subsampled_single_dna)
 
     } else if (params.coassembly) {
         // check at least 2 samples

@@ -24,31 +24,23 @@ process RUNDBCAN_ASMFREE_SUBFAM_ABUND {
     def args = task.ext.args ?: ''
     def prefix = task.ext.prefix ?: "${meta.id}_abund"
     def normalize_val = normalize ?: 'FPKM'
-    
-    // Determine if paired-end based on meta.single_end
     def is_paired = !meta.single_end
-    
-    // Copy db directory into per-sample folder so dbcan_asmfree can find CAZyID_subfam_mapping.tsv
-    def cmd = """
-    mkdir -p ${prefix}
-    cp -r ${db_dir} ${prefix}/db || true
-    cd ${prefix}
-    dbcan_asmfree diamond_subfam_abund"""
-    if (is_paired) {
-        // Paired-end: use two different blastx results (paf1 and paf2)
-        // We are now inside ${prefix}, so use paths relative to parent work dir
-        cmd += " -paf1 ../${diamond_r1} -paf2 ../${diamond_r2}"
-    } else {
-        // Single-end: only paf1 (diamond_r1 and diamond_r2 are the same)
-        cmd += " -paf1 ../${diamond_r1}"
-    }
-    cmd += " --raw_reads ../${reads}"
-    cmd += " -n ${normalize_val}"
-    cmd += " -o ${prefix}"
-    cmd += " ${args}"
+    def paf_args = is_paired ? "-paf1 ../${diamond_r1} -paf2 ../${diamond_r2}" : "-paf1 ../${diamond_r1}"
     
     """
-    ${cmd}
+    mkdir -p ${prefix}
+    ln -sfn \$(readlink -f ${db_dir}) ${prefix}/db
+    cd ${prefix}
+
+    dbcan_asmfree diamond_subfam_abund \\
+        ${paf_args} \\
+        --raw_reads ../${reads} \\
+        -n ${normalize_val} \\
+        -o subfam_abund.out \\
+        ${args}
+
+    rm -f db
+    cd ..
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -60,6 +52,7 @@ process RUNDBCAN_ASMFREE_SUBFAM_ABUND {
     def prefix = task.ext.prefix ?: "${meta.id}_abund"
     """
     mkdir -p ${prefix}
+    touch ${prefix}/subfam_abund.out
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -67,4 +60,3 @@ process RUNDBCAN_ASMFREE_SUBFAM_ABUND {
     END_VERSIONS
     """
 }
-

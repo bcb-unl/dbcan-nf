@@ -30,6 +30,7 @@ include { RUNDBCAN_UTILS_CAL_ABUND     as RUNDBCAN_UTILS_CAL_ABUND_DNA    } from
 include { RUNDBCAN_UTILS_CAL_ABUND     as RUNDBCAN_UTILS_CAL_ABUND_RNA    } from '../modules/local/dbcan_utils_cal_abund'
 include { RUNDBCAN_PLOT_BAR            as RUNDBCAN_PLOT_BAR_DNA        } from '../modules/local/dbcan_plot'
 include { RUNDBCAN_PLOT_BAR            as RUNDBCAN_PLOT_BAR_RNA        } from '../modules/local/dbcan_plot'
+include { SEQTK_SAMPLE                 } from '../modules/nf-core/seqtk/sample/main'
 // new subworkflows
 include { FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS as FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_DNA } from '../subworkflows/nf-core/fastq_extract_kraken_krakentools'
 include { FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS as FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_RNA } from '../subworkflows/nf-core/fastq_extract_kraken_krakentools'
@@ -73,18 +74,24 @@ workflow DBCANMICROBIOMELONG {
             }
             .filter { meta, fq_list -> fq_list && fq_list.size() > 0 }
 
-        // RNA channel - only create channel when transcriptomes are provided, otherwise empty
-        ch_samplesheet_rna = ch_samplesheet
-            .map { meta, fastqs, transcriptomes ->
-                def t_list = transcriptomes ?: []
-                if (t_list && t_list.size() > 0) {
-                    def rna_meta = [ id: meta.id+'_rna', single_end: meta.single_end ]
-                    tuple(rna_meta, t_list)
-                } else {
-                    null
+        // RNA channel - skip when subsampling (same as short reads workflow)
+        def use_rna = !params.subsample
+
+        if (use_rna) {
+            ch_samplesheet_rna = ch_samplesheet
+                .map { meta, fastqs, transcriptomes ->
+                    def t_list = transcriptomes ?: []
+                    if (t_list && t_list.size() > 0) {
+                        def rna_meta = [ id: meta.id+'_rna', single_end: meta.single_end ]
+                        tuple(rna_meta, t_list)
+                    } else {
+                        null
+                    }
                 }
-            }
-            .filter { it != null }
+                .filter { it != null }
+        } else {
+            ch_samplesheet_rna = Channel.empty()
+        }
 
 
         //tmp view channels
@@ -113,10 +120,29 @@ workflow DBCANMICROBIOMELONG {
         }
 
 
-        // 2. pair-end process
         // DNA: long reads skip QC/trim, pass through directly
-        // Keep all DNA reads for downstream mapping
         ch_trimmed_reads_dna_all = ch_samplesheet_dna
+
+        if (params.subsample) {
+            ch_subsample_input_dna = ch_trimmed_reads_dna_all
+                .flatMap { meta, reads_list ->
+                    reads_list.collect { tuple(meta, it, params.subsample_size as Integer) }
+                }
+
+            SEQTK_SAMPLE(ch_subsample_input_dna)
+            ch_versions = ch_versions.mix(SEQTK_SAMPLE.out.versions)
+
+            ch_trimmed_reads_dna_all = SEQTK_SAMPLE.out.reads
+                .map { meta, reads -> tuple(meta, reads) }
+                .groupTuple(by: 0)
+                .map { meta, reads_list ->
+                    def subsample_meta = meta.clone()
+                    subsample_meta.id = meta.id + '_subsample'
+                    def sorted_reads = reads_list.sort { it.toString() }
+                    tuple(subsample_meta, sorted_reads)
+                }
+        }
+
         // For assembly, only use samples without direct assembly FASTA
         ch_trimmed_reads_dna = ch_trimmed_reads_dna_all
             .filter { meta, reads_list ->
@@ -159,7 +185,6 @@ workflow DBCANMICROBIOMELONG {
                 tuple(meta, reads_list[0])
             }
 
-        // Use original reads for FLYE
         ch_flye_input_final_dna = ch_flye_input_dna
 
         // Run FLYE for samples without direct assembly FASTA
@@ -238,7 +263,6 @@ workflow DBCANMICROBIOMELONG {
                 }
                 tuple(new_meta, dbcan_results)
             }
-        // Prepare DNA reads for mapping (use original reads for all samples)
         // Long reads have only a single file, use directly
         ch_bwameme_input_dna = ch_trimmed_reads_dna_all
             .map { meta, reads_list ->

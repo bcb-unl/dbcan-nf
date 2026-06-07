@@ -8,7 +8,7 @@ process DOWNLOAD_CAZY_DMND {
 
     output:
     path "CAZy.dmnd", emit: cazy_dmnd
-    path "db/CAZyID_subfam_mapping.tsv", emit: cazyid_subfam_mapping
+    path "db", emit: db_dir
     path "versions.yml", emit: versions
 
     when:
@@ -51,6 +51,8 @@ process DOWNLOAD_CAZY_DMND {
     touch CAZy.dmnd
     mkdir -p db
     touch db/CAZyID_subfam_mapping.tsv
+    touch db/fam-substrate-mapping.tsv
+    touch db/subfam_EC_mapping.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
