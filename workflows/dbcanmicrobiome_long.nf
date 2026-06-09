@@ -102,7 +102,7 @@ workflow DBCANMICROBIOMELONG {
 
         // process database parameters
         if (params.dbcan_db) {
-            ch_dbcan_db_final = Channel.fromPath(params.dbcan_db, checkIfExists: true)
+            ch_dbcan_db_final = Channel.value(file(params.dbcan_db, checkIfExists: true))
         } else {
             RUNDBCAN_DATABASE()
             ch_dbcan_db_final = RUNDBCAN_DATABASE.out.dbcan_db
@@ -247,24 +247,13 @@ workflow DBCANMICROBIOMELONG {
         // MODULE: run_dbCAN to find CAZymes and CGCs in metagenomics data
         //Will write it into subworkflow later
 
-        ch_easysubstrate_paired = ch_gunzip_gff
-            .map { meta, gff -> tuple(meta.id, meta, gff) }
-            .join(
-                ch_gunzip_faa.map { meta, faa -> tuple(meta.id, meta, faa) },
-                by: 0
-            )
-            .map { id, meta_gff, gff, meta_faa, faa ->
-                tuple(meta_faa, faa, gff)
-            }
-
-        ch_gunzip_faa_for_easysubstrate = ch_easysubstrate_paired
-            .map { meta, faa, gff -> tuple(meta, faa) }
-        ch_gunzip_gff_with_type = ch_easysubstrate_paired
-            .map { meta, faa, gff -> tuple(meta, gff, 'prodigal') }
+        ch_easysubstrate_input = ch_gunzip_faa
+            .map { meta, faa -> tuple(meta.id, meta, faa) }
+            .join(ch_gunzip_gff.map { meta, gff -> tuple(meta.id, gff) }, by: 0)
+            .map { id, meta, faa, gff -> tuple(meta, faa, gff, 'prodigal') }
 
         RUNDBCAN_EASYSUBSTRATE (
-            ch_gunzip_faa_for_easysubstrate,
-            ch_gunzip_gff_with_type,
+            ch_easysubstrate_input,
             ch_dbcan_db_final
         )
 

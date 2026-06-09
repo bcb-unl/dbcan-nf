@@ -101,7 +101,7 @@ workflow DBCANMICROBIOME {
 
         // process database parameters
         if (params.dbcan_db) {
-            ch_dbcan_db_final = Channel.fromPath(params.dbcan_db, checkIfExists: true)
+            ch_dbcan_db_final = Channel.value(file(params.dbcan_db, checkIfExists: true))
         } else {
             RUNDBCAN_DATABASE()
             ch_dbcan_db_final = RUNDBCAN_DATABASE.out.dbcan_db
@@ -341,7 +341,7 @@ workflow DBCANMICROBIOME {
         ch_gunzip_faa = GUNZIP_FAA.out.gunzip
         ch_gunzip_gff = GUNZIP_GFF.out.gunzip
         ch_versions = ch_versions.mix(GUNZIP_FAA.out.versions)
-        
+
         // Save original coassembly gff and faa for RUNDBCAN_EASYSUBSTRATE in coassembly mode
         if (params.coassembly) {
             ch_gunzip_gff_coassembly = ch_gunzip_gff
@@ -356,24 +356,13 @@ workflow DBCANMICROBIOME {
         //Will write it into subworkflow later
         // In coassembly mode, run on coassembly results first, then replicate to samples
 
-        ch_gunzip_gff_with_type = ch_gunzip_gff_coassembly
-            .map { meta, gff -> tuple(meta.id, meta, gff) }
-            .join(
-                ch_gunzip_faa_coassembly.map { meta, faa -> tuple(meta.id, meta, faa) },
-                by: 0
-            )
-            .map { id, meta_gff, gff, meta_faa, faa ->
-                tuple(meta_faa, faa, gff)
-            }
-
-        ch_gunzip_faa_for_easysubstrate = ch_gunzip_gff_with_type
-            .map { meta, faa, gff -> tuple(meta, faa) }
-        ch_gunzip_gff_with_type = ch_gunzip_gff_with_type
-            .map { meta, faa, gff -> tuple(meta, gff, 'prodigal') }
+        ch_easysubstrate_input = ch_gunzip_faa_coassembly
+            .map { meta, faa -> tuple(meta.id, meta, faa) }
+            .join(ch_gunzip_gff_coassembly.map { meta, gff -> tuple(meta.id, gff) }, by: 0)
+            .map { id, meta, faa, gff -> tuple(meta, faa, gff, 'prodigal') }
 
         RUNDBCAN_EASYSUBSTRATE (
-            ch_gunzip_faa_for_easysubstrate,
-            ch_gunzip_gff_with_type,
+            ch_easysubstrate_input,
             ch_dbcan_db_final
         )
 
