@@ -120,28 +120,31 @@ workflow DBCANMICROBIOMELONG {
         }
 
 
-        // DNA: long reads skip QC/trim, pass through directly
-        ch_trimmed_reads_dna_all = ch_samplesheet_dna
+        // DNA: long reads skip QC/trim. Always rewrite FASTQ with seqtk so Flye can
+        // parse Dorado SUP output (extended qual chars / SAM-style headers); subsample
+        // when requested, otherwise pass all reads through (N >> library size).
+        ch_seqtk_input_dna = ch_samplesheet_dna
+            .flatMap { meta, reads_list ->
+                def sample_size = params.subsample
+                    ? params.subsample_size as Integer
+                    : 10_000_000_000 as Integer
+                reads_list.collect { tuple(meta, it, sample_size) }
+            }
 
-        if (params.subsample) {
-            ch_subsample_input_dna = ch_trimmed_reads_dna_all
-                .flatMap { meta, reads_list ->
-                    reads_list.collect { tuple(meta, it, params.subsample_size as Integer) }
+        SEQTK_SAMPLE(ch_seqtk_input_dna)
+        ch_versions = ch_versions.mix(SEQTK_SAMPLE.out.versions)
+
+        ch_trimmed_reads_dna_all = SEQTK_SAMPLE.out.reads
+            .map { meta, reads -> tuple(meta, reads) }
+            .groupTuple(by: 0)
+            .map { meta, reads_list ->
+                def out_meta = meta.clone()
+                if (params.subsample) {
+                    out_meta.id = meta.id + '_subsample'
                 }
-
-            SEQTK_SAMPLE(ch_subsample_input_dna)
-            ch_versions = ch_versions.mix(SEQTK_SAMPLE.out.versions)
-
-            ch_trimmed_reads_dna_all = SEQTK_SAMPLE.out.reads
-                .map { meta, reads -> tuple(meta, reads) }
-                .groupTuple(by: 0)
-                .map { meta, reads_list ->
-                    def subsample_meta = meta.clone()
-                    subsample_meta.id = meta.id + '_subsample'
-                    def sorted_reads = reads_list.sort { it.toString() }
-                    tuple(subsample_meta, sorted_reads)
-                }
-        }
+                def sorted_reads = reads_list.sort { it.toString() }
+                tuple(out_meta, sorted_reads)
+            }
 
         // For assembly, only use samples without direct assembly FASTA
         ch_trimmed_reads_dna = ch_trimmed_reads_dna_all
