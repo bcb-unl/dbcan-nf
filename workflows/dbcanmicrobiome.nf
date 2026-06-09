@@ -64,7 +64,14 @@ workflow DBCANMICROBIOME {
         ch_samplesheet_dna = ch_samplesheet
             .map { meta, fastqs, transcriptomes ->
                 def fq_list = fastqs ?: []
-                def dna_meta = [ id: meta.id+'_dna', single_end: meta.single_end ]
+                def dna_meta = [
+                    id         : meta.id + '_dna',
+                    single_end : meta.single_end
+                ]
+                // Propagate optional assembly FASTA for DNA if provided in samplesheet
+                if (meta.containsKey('assembly_fasta_dna') && meta.assembly_fasta_dna) {
+                    dna_meta.assembly_fasta_dna = meta.assembly_fasta_dna
+                }
                 tuple(dna_meta, fq_list)
             }
             .filter { meta, fq_list -> fq_list && fq_list.size() > 0 }
@@ -181,11 +188,31 @@ workflow DBCANMICROBIOME {
         }
             //ch_extracted_from_kraken2_reads_rna.view()
         // MODULE: Megahit to assemble metagenomics
-        // make sure all reads are the list
+        // Keep all samples for read mapping; only assemble samples without pre-provided contigs
+        ch_megahit_input_dna_all = ch_megahit_input_dna
+
+        if (params.coassembly) {
+            ch_samplesheet_dna
+                .filter { meta, fq_list ->
+                    meta.containsKey('assembly_fasta_dna') && meta.assembly_fasta_dna
+                }
+                .count()
+                .subscribe { n ->
+                    if (n > 0) {
+                        error "Co-assembly mode does not support samples with assembly_fasta_dna in the samplesheet."
+                    }
+                }
+        }
+
+        ch_megahit_input_dna = ch_megahit_input_dna
+            .filter { meta, read1, read2 ->
+                !meta.containsKey('assembly_fasta_dna') || !meta.assembly_fasta_dna
+            }
+
     if (params.subsample && !params.coassembly) {
-        ch_megahit_input_paired_dna = ch_megahit_input_dna
+        ch_megahit_input_paired_dna = ch_megahit_input_dna_all
             .filter { meta, read1, read2 -> read2 != null }
-        ch_megahit_input_single_dna = ch_megahit_input_dna
+        ch_megahit_input_single_dna = ch_megahit_input_dna_all
             .filter { meta, read1, read2 -> read2 == null }
 
         ch_subsample_input_paired_dna = ch_megahit_input_paired_dna
@@ -217,7 +244,11 @@ workflow DBCANMICROBIOME {
                 tuple(subsample_meta, reads, null)
             }
 
-        ch_megahit_input_final_dna = ch_subsampled_paired_dna.mix(ch_subsampled_single_dna)
+        ch_reads_for_mapping_dna = ch_subsampled_paired_dna.mix(ch_subsampled_single_dna)
+        ch_megahit_input_final_dna = ch_reads_for_mapping_dna
+            .filter { meta, read1, read2 ->
+                !meta.containsKey('assembly_fasta_dna') || !meta.assembly_fasta_dna
+            }
 
     } else if (params.coassembly) {
         // check at least 2 samples
@@ -234,7 +265,7 @@ workflow DBCANMICROBIOME {
 
         // Save original samples for later read mapping
         // Ensure meta.id has _dna suffix for consistency
-        ch_original_samples_dna = ch_megahit_input_dna
+        ch_original_samples_dna = ch_megahit_input_dna_all
             .map { meta, r1, r2 ->
                 def new_meta = meta.clone()
                 if (!new_meta.id.endsWith('_dna')) {
@@ -269,20 +300,34 @@ workflow DBCANMICROBIOME {
         }
     } else {
         // Use original reads
+        ch_reads_for_mapping_dna = ch_megahit_input_dna_all
         ch_megahit_input_final_dna = ch_megahit_input_dna
         // For non-coassembly mode, set ch_original_samples_dna to same as input
-        ch_original_samples_dna = ch_megahit_input_dna
+        ch_original_samples_dna = ch_megahit_input_dna_all
     }
 
-        // pair-end for MEGAHIT
+        // Run MEGAHIT only for samples without pre-provided assembly FASTA
         MEGAHIT ( ch_megahit_input_final_dna )
         ch_versions = ch_versions.mix ( MEGAHIT.out.versions )
         ch_megahit_contigs_dna = MEGAHIT.out.contigs
 
+        // For samples with user-provided assembly FASTA, bypass MEGAHIT and use FASTA directly
+        ch_contigs_direct_dna = ch_samplesheet_dna
+            .filter { meta, fq_list ->
+                meta.containsKey('assembly_fasta_dna') && meta.assembly_fasta_dna
+            }
+            .map { meta, fq_list ->
+                def fasta_path = file(meta.assembly_fasta_dna, checkIfExists: true)
+                tuple(meta, fasta_path)
+            }
+
+        // Unified contig channel: mix MEGAHIT output and direct assembly FASTA
+        ch_contigs_dna_final = ch_megahit_contigs_dna.mix(ch_contigs_direct_dna)
+
         //
         // MODULE: Pyrodigal to find genes in metagenomics data
         // Will make it as subworkflow
-        PYRODIGAL ( ch_megahit_contigs_dna, 'gff' )
+        PYRODIGAL ( ch_contigs_dna_final, 'gff' )
         ch_versions = ch_versions.mix(PYRODIGAL.out.versions)
         ch_faa = PYRODIGAL.out.faa
         ch_gff = PYRODIGAL.out.annotations
@@ -311,10 +356,23 @@ workflow DBCANMICROBIOME {
         //Will write it into subworkflow later
         // In coassembly mode, run on coassembly results first, then replicate to samples
 
-        ch_gunzip_gff_with_type = ch_gunzip_gff_coassembly.map { meta, gff -> tuple(meta, gff, 'prodigal') }
+        ch_gunzip_gff_with_type = ch_gunzip_gff_coassembly
+            .map { meta, gff -> tuple(meta.id, meta, gff) }
+            .join(
+                ch_gunzip_faa_coassembly.map { meta, faa -> tuple(meta.id, meta, faa) },
+                by: 0
+            )
+            .map { id, meta_gff, gff, meta_faa, faa ->
+                tuple(meta_faa, faa, gff)
+            }
+
+        ch_gunzip_faa_for_easysubstrate = ch_gunzip_gff_with_type
+            .map { meta, faa, gff -> tuple(meta, faa) }
+        ch_gunzip_gff_with_type = ch_gunzip_gff_with_type
+            .map { meta, faa, gff -> tuple(meta, gff, 'prodigal') }
 
         RUNDBCAN_EASYSUBSTRATE (
-            ch_gunzip_faa_coassembly,
+            ch_gunzip_faa_for_easysubstrate,
             ch_gunzip_gff_with_type,
             ch_dbcan_db_final
         )
@@ -382,8 +440,10 @@ workflow DBCANMICROBIOME {
         // ch_original_samples_dna already has _dna suffix, so we can use it directly
         if (params.coassembly) {
             ch_bwameme_input_dna = ch_original_samples_dna
+        } else if (params.subsample) {
+            ch_bwameme_input_dna = ch_reads_for_mapping_dna
         } else {
-            ch_bwameme_input_dna = ch_megahit_input_final_dna
+            ch_bwameme_input_dna = ch_megahit_input_dna_all
         }
         //ch_bwameme_input_dna.view()
         ch_bwameme_input_rna = ch_extracted_from_kraken2_reads_rna
@@ -395,7 +455,7 @@ workflow DBCANMICROBIOME {
         if (params.coassembly) {
             // In coassembly mode, there should be only one contig set (from coassembly)
             // Create index once for coassembly contigs
-            BWA_INDEX(ch_megahit_contigs_dna)
+            BWA_INDEX(ch_contigs_dna_final)
             
             // In coassembly mode, replicate index to each sample with sample meta.id
             // BWA_MEM uses meta.id to find index directory (bwa_${meta.id}), so we need
@@ -417,16 +477,16 @@ workflow DBCANMICROBIOME {
                 }
             
             // Replicate contigs to each original sample for join operation
-            ch_megahit_contigs_dna_for_join = ch_megahit_contigs_dna
+            ch_megahit_contigs_dna_for_join = ch_contigs_dna_final
                 .combine(ch_original_samples_dna.map { meta, r1, r2 -> meta })
                 .map { contigs_meta, contigs, original_meta ->
                     // Use original sample meta (already has _dna suffix)
                     tuple(original_meta, contigs)
                 }
         } else {
-            BWA_INDEX(ch_megahit_contigs_dna)
+            BWA_INDEX(ch_contigs_dna_final)
             ch_index_dna = BWA_INDEX.out.index
-            ch_megahit_contigs_dna_for_join = ch_megahit_contigs_dna
+            ch_megahit_contigs_dna_for_join = ch_contigs_dna_final
         }
 
         ch_versions = ch_versions.mix(BWA_INDEX.out.versions)
