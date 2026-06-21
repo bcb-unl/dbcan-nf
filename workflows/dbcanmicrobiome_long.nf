@@ -125,10 +125,10 @@ workflow DBCANMICROBIOMELONG {
         // when requested, otherwise pass all reads through (N >> library size).
         ch_seqtk_input_dna = ch_samplesheet_dna
             .flatMap { meta, reads_list ->
-                def sample_size = params.subsample
-                    ? params.subsample_size as Integer
-                    : 10_000_000_000 as Integer
-                reads_list.collect { tuple(meta, it, sample_size) }
+                def sample_spec = params.subsample
+                    ? (params.subsample_mode == 'count' ? params.subsample_size : params.subsample_fraction)
+                    : 10_000_000_000
+                reads_list.collect { tuple(meta, it, sample_spec) }
             }
 
         SEQTK_SAMPLE(ch_seqtk_input_dna)

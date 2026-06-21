@@ -8,7 +8,7 @@ process SEQTK_SAMPLE_PAIRED {
         'biocontainers/seqtk:1.4--he4a0461_1' }"
 
     input:
-    tuple val(meta), path(read1), path(read2), val(sample_size)
+    tuple val(meta), path(read1), path(read2), val(sample_spec)
 
     output:
     tuple val(meta), path(read1), path(read2), emit: reads
@@ -23,15 +23,15 @@ process SEQTK_SAMPLE_PAIRED {
     if (!(args ==~ /.*\ -s\ ?[0-9]+.*/)) {
         args += " -s100"
     }
-    if ( !sample_size ) {
-        error "SEQTK_SAMPLE_PAIRED must have a sample_size value included"
+    if ( sample_spec == null ) {
+        error "SEQTK_SAMPLE_PAIRED must have a sample_spec value included"
     }
     """
     seqtk \\
         sample \\
         $args \\
         ${read1} \\
-        ${sample_size} \\
+        ${sample_spec} \\
         | seqtk seq -n \\
         | sort -u > read_names_r1.txt
 

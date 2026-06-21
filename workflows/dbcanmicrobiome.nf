@@ -210,6 +210,10 @@ workflow DBCANMICROBIOME {
             }
 
     if (params.subsample && !params.coassembly) {
+        def subsample_spec = params.subsample_mode == 'count'
+            ? params.subsample_size
+            : params.subsample_fraction
+
         ch_megahit_input_paired_dna = ch_megahit_input_dna_all
             .filter { meta, read1, read2 -> read2 != null }
         ch_megahit_input_single_dna = ch_megahit_input_dna_all
@@ -217,11 +221,11 @@ workflow DBCANMICROBIOME {
 
         ch_subsample_input_paired_dna = ch_megahit_input_paired_dna
             .map { meta, read1, read2 ->
-                tuple(meta, read1, read2, params.subsample_size as Integer)
+                tuple(meta, read1, read2, subsample_spec)
             }
         ch_subsample_input_single_dna = ch_megahit_input_single_dna
             .map { meta, read1, read2 ->
-                tuple(meta, read1, params.subsample_size as Integer)
+                tuple(meta, read1, subsample_spec)
             }
 
         SEQTK_SAMPLE_PAIRED(ch_subsample_input_paired_dna)

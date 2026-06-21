@@ -56,6 +56,22 @@ workflow PIPELINE_INITIALISATION {
         null
     )
 
+    if (params.subsample) {
+        if (!['fraction', 'count'].contains(params.subsample_mode)) {
+            error "Invalid subsample_mode '${params.subsample_mode}'. Must be 'fraction' or 'count'."
+        }
+        if (params.subsample_mode == 'fraction') {
+            if (!(params.subsample_fraction instanceof Number) || params.subsample_fraction <= 0 || params.subsample_fraction > 1) {
+                error "subsample_fraction must be in (0, 1], got: ${params.subsample_fraction}"
+            }
+        }
+        if (params.subsample_mode == 'count') {
+            if (!(params.subsample_size instanceof Number) || params.subsample_size <= 0) {
+                error "subsample_size must be a positive integer, got: ${params.subsample_size}"
+            }
+        }
+    }
+
     //
     // Check config provided to the pipeline
     //
