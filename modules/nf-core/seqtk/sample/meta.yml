@@ -23,9 +23,9 @@ input:
         type: file
         description: List of input FastQ files
         pattern: "*.{fastq.gz}"
-    - sample_size:
-        type: integer
-        description: Number of reads to sample.
+    - sample_spec:
+        type: number
+        description: Number of reads (integer) or fraction in (0, 1] passed to seqtk sample.
 output:
   - reads:
       - meta:

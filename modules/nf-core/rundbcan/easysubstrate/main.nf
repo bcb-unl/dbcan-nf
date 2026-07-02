@@ -8,8 +8,7 @@ process RUNDBCAN_EASYSUBSTRATE {
         'biocontainers/dbcan:5.2.9--pyhdfd78af_0' }"
 
     input:
-    tuple val(meta),  path(input_raw_data)
-    tuple val(meta2), path(input_gff), val(gff_type)
+    tuple val(meta), path(input_raw_data), path(input_gff), val(gff_type)
     path  dbcan_db
 
     output:

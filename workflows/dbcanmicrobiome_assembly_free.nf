@@ -55,7 +55,7 @@ workflow DBCANMICROBIOMEASSEMBLYFREE {
         // For assembly-free, we only need CAZy.dmnd, so download it directly instead of full dbCAN database
         DOWNLOAD_CAZY_DMND()
         ch_cazy_dmnd = DOWNLOAD_CAZY_DMND.out.cazy_dmnd
-        ch_cazyid_subfam_mapping = DOWNLOAD_CAZY_DMND.out.cazyid_subfam_mapping
+        ch_db_dir_for_asmfree = DOWNLOAD_CAZY_DMND.out.db_dir.first()
         ch_versions = ch_versions.mix(DOWNLOAD_CAZY_DMND.out.versions)
 
         // Prepare diamond database channel for DIAMOND_BLASTX
@@ -176,7 +176,7 @@ workflow DBCANMICROBIOMEASSEMBLYFREE {
                 def base_id = meta.id.replaceFirst(/_R[12]$/, '')
                 tuple(base_id, meta, diamond_result)
             }
-            .groupTuple()
+            .groupTuple(size: 2)
             .map { base_id, metas, results ->
                 // Determine if paired-end based on number of results
                 def is_paired = results.size() > 1
@@ -210,12 +210,6 @@ workflow DBCANMICROBIOMEASSEMBLYFREE {
         // Extract diamond and reads channels separately for module inputs
         ch_diamond_for_asmfree_dna = ch_asmfree_input_dna.map { meta, diamond_r1, diamond_r2, reads_meta, reads_file -> tuple(meta, diamond_r1, diamond_r2) }
         ch_reads_for_asmfree_dna_final = ch_asmfree_input_dna.map { meta, diamond_r1, diamond_r2, reads_meta, reads_file -> tuple(meta, reads_file) }
-        
-        // Prepare db directory for dbcan_asmfree (contains CAZyID_subfam_mapping.tsv)
-        // Get the parent directory from the mapping file
-        // DOWNLOAD_CAZY_DMND only runs once, so ch_cazyid_subfam_mapping has only one value
-        // Use .first() to convert to value channel
-        ch_db_dir_for_asmfree = ch_cazyid_subfam_mapping.map { it.parent }.first()
         
         // Calculate all abundance types (fam, subfam, EC, substrate) in one module
         // This is similar to RUNDBCAN_UTILS_CAL_ABUND in the assembly-based workflow

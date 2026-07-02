@@ -10,15 +10,17 @@
 [![run with docker](https://img.shields.io/badge/run%20with-docker-0db7ed?labelColor=000000&logo=docker)](https://www.docker.com/)
 [![run with singularity](https://img.shields.io/badge/run%20with-singularity-1d355c.svg?labelColor=000000)](https://sylabs.io/docs/)
 
-
 ## Introduction
+
+**July 2, 2026** — The `run_dbcan` module is now integrated into [nf-core/funcscan](https://github.com/nf-core/funcscan), enabling CAZyme annotation as part of the nf-core functional screening workflow. This contribution was developed with support from Haidong Yi and Xinpeng Zhang.
+
 
 **dbcan-nf** is a bioinformatics pipeline for carbohydrate-active enzyme (CAZyme) annotation and analysis in microbiome data. The pipeline implements the protocol described in "Carbohydrate-active enzyme annotation in microbiomes using dbCAN" (bioRxiv) and supports three analysis modes:
 
 > 📖 **Full Documentation**: Complete documentation with detailed guides, parameter references, and example results is available at [run-dbcan.readthedocs.io](https://run-dbcan.readthedocs.io/en/latest/nextflow/index.html).
 
 - **Short reads**: Assembly-based analysis using MEGAHIT for short-read metagenomic data
-- **Long reads**: Assembly-based analysis using Flye for long-read metagenomic data  
+- **Long reads**: Assembly-based analysis using Flye for long-read metagenomic data
 - **Assembly free**: Direct annotation without assembly using DIAMOND blastx
 
 The pipeline performs quality control, optional taxonomic filtering, gene prediction (for assembly-based modes), CAZyme annotation using dbCAN, abundance calculation, and visualization.
@@ -61,9 +63,7 @@ CONTROL_REP1,AEG588A1_S1_L002_R1_001.fastq.gz,AEG588A1_S1_L002_R2_001.fastq.gz,
 SAMPLE_LONGREADS,longreads_sample_R1.fastq.gz,,sample_assembly.fasta.gz
 ```
 
-Each row represents a fastq file (single-end) or a pair of fastq files (paired end).  
-The optional `assembly_fasta_dna` column can be used to provide a pre-assembled DNA contig/scaffold FASTA (e.g. `.fa`, `.fna`, `.fasta`, optionally gzipped).  
-For **long-read mode** (`--type longreads`):
+Each row represents a fastq file (single-end) or a pair of fastq files (paired end).The optional `assembly_fasta_dna` column can be used to provide a pre-assembled DNA contig/scaffold FASTA (e.g. `.fa`, `.fna`, `.fasta`, optionally gzipped).For **long-read mode** (`--type longreads`):
 
 - If `assembly_fasta_dna` is **empty**, the pipeline will assemble reads using Flye and use the resulting contigs for downstream analysis.
 - If `assembly_fasta_dna` is **provided**, the pipeline will **skip Flye assembly** for that sample and use the given FASTA directly for gene prediction and downstream dbCAN analysis.
@@ -108,6 +108,7 @@ For further information or help, please open an issue on the GitHub repository.
 ## Citations
 
 <!-- TODO: Add citation for pipeline after first release. Uncomment lines below and update Zenodo doi. -->
+
 <!-- If you use dbcan-nf for your analysis, please cite it using the following doi: [10.5281/zenodo.XXXXXX](https://doi.org/10.5281/zenodo.XXXXXX) -->
 
 <!-- TODO: Add bibliography of tools and data used in your pipeline -->

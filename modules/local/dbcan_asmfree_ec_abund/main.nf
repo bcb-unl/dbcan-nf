@@ -8,7 +8,7 @@ process RUNDBCAN_ASMFREE_EC_ABUND {
         'biocontainers/dbcan:5.2.2--pyhdfd78af_0' }"
     
     input:
-    tuple val(meta), path(input_dir)  // Input directory from subfam_abund
+    tuple val(meta), path(input_dir)  // Input directory from subfam_abund (contains subfam_abund.out)
     path db_dir     // Directory containing subfam_EC_mapping.tsv
 
     output:
@@ -22,20 +22,18 @@ process RUNDBCAN_ASMFREE_EC_ABUND {
     def args = task.ext.args ?: ''
     def prefix = task.ext.prefix ?: "${meta.id}_abund"
     
-    // Copy db directory into per-sample folder so dbcan_asmfree can find subfam_EC_mapping.tsv
-    def cmd = """
+    """
     mkdir -p ${prefix}
-    cp -r ${db_dir} ${prefix}/db || true
+    ln -sfn \$(readlink -f ${db_dir}) ${prefix}/db
     cd ${prefix}
 
-    dbcan_asmfree diamond_EC_abund"""
-    cmd += " -i ../${input_dir}"
-    cmd += " -o ${prefix}"
-    cmd += " ${args}"
-    
+    dbcan_asmfree diamond_EC_abund \\
+        -i ../${input_dir}/subfam_abund.out \\
+        -o EC_abund.out \\
+        ${args}
 
-    """
-    ${cmd}
+    rm -f db
+    cd ..
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -47,6 +45,7 @@ process RUNDBCAN_ASMFREE_EC_ABUND {
     def prefix = task.ext.prefix ?: "${meta.id}_abund"
     """
     mkdir -p ${prefix}
+    touch ${prefix}/EC_abund.out
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -54,4 +53,3 @@ process RUNDBCAN_ASMFREE_EC_ABUND {
     END_VERSIONS
     """
 }
-

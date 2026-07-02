@@ -33,7 +33,7 @@ process RUNDBCAN_ASMFREE_CAL_ABUND {
     
     """
     mkdir -p ${prefix}
-    cp -r ${db_dir} ${prefix}/db || true
+    ln -sfn \$(readlink -f ${db_dir}) ${prefix}/db
     cd ${prefix}
 
     # Step 1: Calculate family abundance
@@ -69,6 +69,7 @@ process RUNDBCAN_ASMFREE_CAL_ABUND {
         ln -sf substrate_abund.out fam_substrate_abund.out
     fi
 
+    rm -f db
     cd ..
 
     cat <<-END_VERSIONS > versions.yml

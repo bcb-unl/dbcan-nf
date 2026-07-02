@@ -221,15 +221,36 @@
             "type": "string",
             "default": "--pacbio-hifi"
         },
+        "flye_extra_args": {
+            "type": "string",
+            "default": "--meta --asm-coverage 50",
+            "description": "Extra Flye CLI flags for metagenome assembly (e.g. --meta)"
+        },
         "kraken_db": {
             "type": "string"
         },
         "subsample": {
             "type": "boolean"
         },
+        "subsample_mode": {
+            "type": "string",
+            "default": "fraction",
+            "enum": ["fraction", "count"],
+            "description": "Subsample by read fraction or fixed read count per file."
+        },
+        "subsample_fraction": {
+            "type": "number",
+            "default": 0.2,
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "maximum": 1,
+            "description": "Fraction of reads to keep per file when subsample_mode is fraction (e.g. 0.2 = 20%)."
+        },
         "subsample_size": {
             "type": "integer",
-            "default": 20000000
+            "default": 20000000,
+            "minimum": 1,
+            "description": "Number of reads to keep per file when subsample_mode is count."
         },
         "coassembly": {
             "type": "boolean"

@@ -170,17 +170,31 @@ Only relevant when `--type shortreads`.
 - Purpose: downsample each sample before assembly to reduce compute and to quickly sanity-check the pipeline.
 - Parameters:
   - `--subsample`: enable subsampling.
-  - `--subsample_size`: number of reads per file to keep (default `20000000` in config).
+  - `--subsample_mode`: `fraction` (default) or `count`.
+  - `--subsample_fraction`: fraction of reads per file to keep when mode is `fraction` (default `0.2` = 20%).
+  - `--subsample_size`: number of reads per file to keep when mode is `count` (default `20000000`).
 - Behavior:
   - Applies per-sample before MEGAHIT, using `seqtk sample`.
+  - In `fraction` mode, each file keeps the same proportion of reads (better for multi-sample comparisons).
+  - In `count` mode, each file keeps at most N reads (better for hard compute limits).
   - Mutually exclusive with `--coassembly`.
-- Example:
+- Examples:
 ```bash
+# Default: keep 20% of reads per file
 nextflow run nf-core/dbcanmicrobiome \
   --type shortreads \
   --input samplesheet.csv \
   --outdir results_subsample \
   --subsample \
+  -profile docker
+
+# Fixed read count per file
+nextflow run nf-core/dbcanmicrobiome \
+  --type shortreads \
+  --input samplesheet.csv \
+  --outdir results_subsample \
+  --subsample \
+  --subsample_mode count \
   --subsample_size 5000000 \
   -profile docker
 ```

@@ -30,6 +30,7 @@ include { RUNDBCAN_UTILS_CAL_ABUND     as RUNDBCAN_UTILS_CAL_ABUND_DNA    } from
 include { RUNDBCAN_UTILS_CAL_ABUND     as RUNDBCAN_UTILS_CAL_ABUND_RNA    } from '../modules/local/dbcan_utils_cal_abund'
 include { RUNDBCAN_PLOT_BAR            as RUNDBCAN_PLOT_BAR_DNA        } from '../modules/local/dbcan_plot'
 include { RUNDBCAN_PLOT_BAR            as RUNDBCAN_PLOT_BAR_RNA        } from '../modules/local/dbcan_plot'
+include { SEQTK_SAMPLE                 } from '../modules/nf-core/seqtk/sample/main'
 // new subworkflows
 include { FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS as FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_DNA } from '../subworkflows/nf-core/fastq_extract_kraken_krakentools'
 include { FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS as FASTQ_EXTRACT_KRAKEN_KRAKENTOOLS_RNA } from '../subworkflows/nf-core/fastq_extract_kraken_krakentools'
@@ -73,18 +74,24 @@ workflow DBCANMICROBIOMELONG {
             }
             .filter { meta, fq_list -> fq_list && fq_list.size() > 0 }
 
-        // RNA channel - only create channel when transcriptomes are provided, otherwise empty
-        ch_samplesheet_rna = ch_samplesheet
-            .map { meta, fastqs, transcriptomes ->
-                def t_list = transcriptomes ?: []
-                if (t_list && t_list.size() > 0) {
-                    def rna_meta = [ id: meta.id+'_rna', single_end: meta.single_end ]
-                    tuple(rna_meta, t_list)
-                } else {
-                    null
+        // RNA channel - skip when subsampling (same as short reads workflow)
+        def use_rna = !params.subsample
+
+        if (use_rna) {
+            ch_samplesheet_rna = ch_samplesheet
+                .map { meta, fastqs, transcriptomes ->
+                    def t_list = transcriptomes ?: []
+                    if (t_list && t_list.size() > 0) {
+                        def rna_meta = [ id: meta.id+'_rna', single_end: meta.single_end ]
+                        tuple(rna_meta, t_list)
+                    } else {
+                        null
+                    }
                 }
-            }
-            .filter { it != null }
+                .filter { it != null }
+        } else {
+            ch_samplesheet_rna = Channel.empty()
+        }
 
 
         //tmp view channels
@@ -95,7 +102,7 @@ workflow DBCANMICROBIOMELONG {
 
         // process database parameters
         if (params.dbcan_db) {
-            ch_dbcan_db_final = Channel.fromPath(params.dbcan_db, checkIfExists: true)
+            ch_dbcan_db_final = Channel.value(file(params.dbcan_db, checkIfExists: true))
         } else {
             RUNDBCAN_DATABASE()
             ch_dbcan_db_final = RUNDBCAN_DATABASE.out.dbcan_db
@@ -113,10 +120,32 @@ workflow DBCANMICROBIOMELONG {
         }
 
 
-        // 2. pair-end process
-        // DNA: long reads skip QC/trim, pass through directly
-        // Keep all DNA reads for downstream mapping
-        ch_trimmed_reads_dna_all = ch_samplesheet_dna
+        // DNA: long reads skip QC/trim. Always rewrite FASTQ with seqtk so Flye can
+        // parse Dorado SUP output (extended qual chars / SAM-style headers); subsample
+        // when requested, otherwise pass all reads through (N >> library size).
+        ch_seqtk_input_dna = ch_samplesheet_dna
+            .flatMap { meta, reads_list ->
+                def sample_spec = params.subsample
+                    ? (params.subsample_mode == 'count' ? params.subsample_size : params.subsample_fraction)
+                    : 10_000_000_000
+                reads_list.collect { tuple(meta, it, sample_spec) }
+            }
+
+        SEQTK_SAMPLE(ch_seqtk_input_dna)
+        ch_versions = ch_versions.mix(SEQTK_SAMPLE.out.versions)
+
+        ch_trimmed_reads_dna_all = SEQTK_SAMPLE.out.reads
+            .map { meta, reads -> tuple(meta, reads) }
+            .groupTuple(by: 0)
+            .map { meta, reads_list ->
+                def out_meta = meta.clone()
+                if (params.subsample) {
+                    out_meta.id = meta.id + '_subsample'
+                }
+                def sorted_reads = reads_list.sort { it.toString() }
+                tuple(out_meta, sorted_reads)
+            }
+
         // For assembly, only use samples without direct assembly FASTA
         ch_trimmed_reads_dna = ch_trimmed_reads_dna_all
             .filter { meta, reads_list ->
@@ -159,7 +188,6 @@ workflow DBCANMICROBIOMELONG {
                 tuple(meta, reads_list[0])
             }
 
-        // Use original reads for FLYE
         ch_flye_input_final_dna = ch_flye_input_dna
 
         // Run FLYE for samples without direct assembly FASTA
@@ -219,12 +247,13 @@ workflow DBCANMICROBIOMELONG {
         // MODULE: run_dbCAN to find CAZymes and CGCs in metagenomics data
         //Will write it into subworkflow later
 
-        ch_gunzip_gff_with_type = ch_gunzip_gff.map { meta, gff -> tuple(meta, gff, 'prodigal') }
-
+        ch_easysubstrate_input = ch_gunzip_faa
+            .map { meta, faa -> tuple(meta.id, meta, faa) }
+            .join(ch_gunzip_gff.map { meta, gff -> tuple(meta.id, gff) }, by: 0)
+            .map { id, meta, faa, gff -> tuple(meta, faa, gff, 'prodigal') }
 
         RUNDBCAN_EASYSUBSTRATE (
-            ch_gunzip_faa,
-            ch_gunzip_gff_with_type,
+            ch_easysubstrate_input,
             ch_dbcan_db_final
         )
 
@@ -238,7 +267,6 @@ workflow DBCANMICROBIOMELONG {
                 }
                 tuple(new_meta, dbcan_results)
             }
-        // Prepare DNA reads for mapping (use original reads for all samples)
         // Long reads have only a single file, use directly
         ch_bwameme_input_dna = ch_trimmed_reads_dna_all
             .map { meta, reads_list ->
