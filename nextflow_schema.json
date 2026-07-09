@@ -212,7 +212,7 @@
         },
         "kraken_tax": {
             "type": "string",
-            "default": 9606
+            "default": "9606"
         },
         "skip_kraken_extraction": {
             "type": "boolean"
@@ -241,8 +241,7 @@
         "subsample_fraction": {
             "type": "number",
             "default": 0.2,
-            "minimum": 0,
-            "exclusiveMinimum": true,
+            "exclusiveMinimum": 0,
             "maximum": 1,
             "description": "Fraction of reads to keep per file when subsample_mode is fraction (e.g. 0.2 = 20%)."
         },
